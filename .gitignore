@@ -34,8 +34,8 @@ pip-delete-this-directory.txt
 *.ipynb
 
 # Datasets
-datasets/
-datasets
+datasets/*
+!datasets/README.md
 
 # Unit test / coverage
 htmlcov/

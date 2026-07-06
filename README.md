@@ -31,9 +31,24 @@ RigFlow4D/
   train/
   utils/
   docs/
+  datasets/   # local/cloud data root, ignored except datasets/README.md
 ```
 
 The original implementation should be treated as an architectural reference, not as the final algorithm. In particular, the old animal/multi-species assumptions, DINOv2 feature cache, and deterministic pose regression path will be replaced by the RigFlow4D design.
+
+## Dataset Layout
+
+Datasets should live inside the project directory, matching the MoCapAnything convention of project-relative paths:
+
+```text
+RigFlow4D/
+  datasets/
+    AMASS_archives/      # downloaded .tar.bz2 files
+    AMASS/               # extracted official AMASS subsets: ACCAD/, CMU/, BMLmovi/, ...
+    AMASS_RigFlow4D/     # normalized cache: manifest.json + converted .npz files
+```
+
+Do not add extra `raw/amass/normalized/amass` nesting. The AMASS subset folders under `datasets/AMASS/` are the official dataset structure, not additional RigFlow4D layers.
 
 ## Planning Document
 

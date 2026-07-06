@@ -27,6 +27,52 @@ preprocess/                 Data and visual-token preprocessing
 train/                      Training entrypoints
 inference/                  Inference entrypoints
 utils/                      Shared geometry, rotation, FK, and visualization utilities
+datasets/                   Project-local dataset root, ignored by git except datasets/README.md
+```
+
+## Project-Local Dataset Layout
+
+Follow the same project-relative style used by MoCapAnything. On both local machines and cloud servers, put training data under the cloned project directory:
+
+```text
+RigFlow4D/
+  datasets/
+    AMASS_archives/
+      ACCAD.tar.bz2
+      BMLmovi.tar.bz2
+      BMLrub.tar.bz2
+      CMU.tar.bz2
+      ...
+    AMASS/
+      ACCAD/
+      BMLmovi/
+      BMLrub/
+      CMU/
+      ...
+    AMASS_RigFlow4D/
+      manifest.json
+      *.npz
+```
+
+`datasets/AMASS/` should keep the official AMASS subset layout after extraction. Do not create extra levels such as `raw/amass/normalized/amass`; the only RigFlow4D-specific output directory is `datasets/AMASS_RigFlow4D/`.
+
+Cloud setup from the project root:
+
+```bash
+cd ~/RigFlow4D
+mkdir -p datasets/AMASS_archives datasets/AMASS datasets/AMASS_RigFlow4D
+cp /path/to/downloaded/*.tar.bz2 datasets/AMASS_archives/
+for f in datasets/AMASS_archives/*.tar.bz2; do
+  tar -xjf "$f" -C datasets/AMASS
+done
+```
+
+If the archives are currently staged locally under `G:\dataset`, copy them into the project-local archive folder before uploading or syncing:
+
+```powershell
+cd E:\vscode\project\MocapAnything\RigFlow4D
+New-Item -ItemType Directory -Force -Path datasets\AMASS_archives,datasets\AMASS,datasets\AMASS_RigFlow4D
+Copy-Item G:\dataset\*.tar.bz2 datasets\AMASS_archives\
 ```
 
 ## Dataset Adapter Contract
@@ -100,15 +146,15 @@ The converter writes normalized `.npz` files plus `manifest.json`, which can be 
 
 ```powershell
 python -m preprocess.converters.raw_motion_capture `
-  --input-dir path/to/raw_amass_or_aist_npz `
-  --output-dir path/to/rigflow4d_normalized `
+  --input-dir datasets/AMASS `
+  --output-dir datasets/AMASS_RigFlow4D `
   --dataset-name amass `
-  --source-format auto
+  --source-format amass
 ```
 
 This parser does not require SMPL or SMPL-X model assets. It uses the first 24 body pose joints and a default SMPL-like rest skeleton to generate approximate FK `positions`, then reuses the normalized motion converter. These positions are good enough to bootstrap data loading and smoke training; precise AMASS/SMPL-X joints should be added later through an asset-backed parser.
 
-The input directory is scanned recursively, so AMASS archives can be extracted with their original nested structure, for example `AMASS/ACCAD/s007/*.npz`. Output sample names preserve the relative path with `__` separators to avoid collisions.
+The input directory is scanned recursively, so AMASS archives can be extracted with their original nested structure, for example `datasets/AMASS/ACCAD/s007/*.npz`. Output sample names preserve the relative path with `__` separators to avoid collisions.
 
 ## Motion Window Batching
 
@@ -189,8 +235,8 @@ Once a normalized `.npz` dataset and manifest exist, run a short CPU smoke train
 
 ```powershell
 python train/rigflow4d_latent_refiner.py `
-  --data-root path/to/normalized_dataset `
-  --manifest path/to/normalized_dataset/manifest.json `
+  --data-root datasets/AMASS_RigFlow4D `
+  --manifest datasets/AMASS_RigFlow4D/manifest.json `
   --window-size 8 `
   --stride 8 `
   --batch-size 2 `
