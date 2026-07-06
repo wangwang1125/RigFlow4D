@@ -87,6 +87,31 @@ def test_convert_raw_motion_capture_directory_writes_normalized_manifest(tmp_pat
     assert sample.root_translation.shape == (3, 3)
 
 
+def test_convert_raw_motion_capture_directory_recurses_nested_amass_layout(tmp_path):
+    raw_dir = tmp_path / "raw"
+    out_dir = tmp_path / "normalized"
+    nested_a = raw_dir / "ACCAD" / "s007"
+    nested_b = raw_dir / "ACCAD" / "s008"
+    nested_a.mkdir(parents=True)
+    nested_b.mkdir(parents=True)
+    write_amass_like_npz(nested_a / "neutral_stagei.npz")
+    write_amass_like_npz(nested_b / "neutral_stagei.npz")
+
+    manifest_path = convert_raw_motion_capture_directory(
+        input_dir=raw_dir,
+        output_dir=out_dir,
+        dataset_name="amass",
+    )
+    adapter = NormalizedNpzAdapter(root=out_dir, manifest_path=manifest_path)
+
+    assert len(adapter) == 2
+    output_names = sorted(record["path"] for record in adapter.samples)
+    assert output_names == [
+        "ACCAD__s007__neutral_stagei.npz",
+        "ACCAD__s008__neutral_stagei.npz",
+    ]
+
+
 def test_parse_args_builds_converter_config(tmp_path):
     config = parse_args(
         [

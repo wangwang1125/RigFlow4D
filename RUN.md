@@ -108,6 +108,8 @@ python -m preprocess.converters.raw_motion_capture `
 
 This parser does not require SMPL or SMPL-X model assets. It uses the first 24 body pose joints and a default SMPL-like rest skeleton to generate approximate FK `positions`, then reuses the normalized motion converter. These positions are good enough to bootstrap data loading and smoke training; precise AMASS/SMPL-X joints should be added later through an asset-backed parser.
 
+The input directory is scanned recursively, so AMASS archives can be extracted with their original nested structure, for example `AMASS/ACCAD/s007/*.npz`. Output sample names preserve the relative path with `__` separators to avoid collisions.
+
 ## Motion Window Batching
 
 Training code should wrap sequence adapters with `data.MotionWindowDataset` before building motion priors or VAE/flow batches:

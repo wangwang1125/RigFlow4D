@@ -132,9 +132,10 @@ def convert_raw_motion_capture_directory(
     parsed_path = output_path / "_parsed_motion"
     parsed_path.mkdir(parents=True, exist_ok=True)
 
-    for source_file in sorted(input_path.glob("*.npz")):
+    for source_file in sorted(input_path.rglob("*.npz")):
         parsed = parse_raw_motion_capture_npz(source_file, source_format=source_format)
-        np.savez(parsed_path / source_file.name, **parsed)
+        relative_name = _safe_relative_npz_name(source_file.relative_to(input_path))
+        np.savez(parsed_path / relative_name, **parsed)
 
     return convert_motion_npz_directory(
         input_dir=parsed_path,
@@ -285,6 +286,16 @@ def _translation_keys(source_format: str) -> tuple[str, ...]:
     if source_format == "aistpp":
         return ("smpl_trans", "trans", "transl", "root_translation")
     return ("trans", "smpl_trans", "transl", "root_translation")
+
+
+def _safe_relative_npz_name(relative_path: Path) -> str:
+    stem_parts = list(relative_path.with_suffix("").parts)
+    safe_stem = "__".join(_sanitize_name_part(part) for part in stem_parts)
+    return f"{safe_stem}.npz"
+
+
+def _sanitize_name_part(value: str) -> str:
+    return "".join(char if char.isalnum() or char in {"-", "_"} else "_" for char in value)
 
 
 def _default_chain_ids(parents: np.ndarray) -> np.ndarray:
