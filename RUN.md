@@ -16,6 +16,31 @@ RigFlow4D currently starts from the MoCapAnything V2 code layout, but the algori
 
 The copied modules are structural references. Before training, each copied stage should be audited and renamed or replaced so that old animal/multi-species assumptions do not silently leak into the RigFlow4D human pipeline.
 
+## Environment Setup
+
+Default install:
+
+```bash
+cd ~/RigFlow4D
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+```
+
+For tests:
+
+```bash
+python -m pip install -r requirements-dev.txt
+python -m pytest -q
+```
+
+For cloud GPU training, use the provider's recommended CUDA-matched PyTorch image or install PyTorch first, then install `requirements.txt`. Do not install the old full freeze by default: Huawei ModelArts wheels, local `file:///modelarts/...` paths, CLIP git installs, TripoSG packages, and explicit `nvidia-*` CUDA component wheels are intentionally excluded from the core environment.
+
+Only install optional legacy dependencies when running copied MoCapAnything V1/V2 reference scripts:
+
+```bash
+python -m pip install -r requirements-legacy.txt
+```
+
 ## Important Paths
 
 ```text

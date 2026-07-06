@@ -1,0 +1,25 @@
+# Optional dependencies for copied MoCapAnything V1/V2 reference scripts.
+# Install this only when you intentionally run legacy mesh/video rendering,
+# TripoSG-based, BVH visualization, or old training entrypoints.
+
+-r requirements.txt
+
+accelerate>=0.30
+diffusers>=0.30
+einops>=0.7
+fvcore>=0.1.5.post20221221
+imageio>=2.30
+matplotlib>=3.7
+mmengine>=0.10
+omegaconf>=2.3
+opencv-python-headless>=4.8
+peft>=0.10
+prettytable>=3.7
+pyrender>=0.1.45
+roma>=1.5
+scikit-image>=0.22
+scipy>=1.10
+smplx>=0.1.28
+tensorboard>=2.14
+trimesh>=4.0
+yacs>=0.1.8

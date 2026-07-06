@@ -16,6 +16,17 @@ RigFlow4D targets human motion capture from image or video inputs with:
 - Kinematic VAE latent space and flow matching refinement.
 - Differentiable Pose2Rot and FK supervision.
 
+## Environment
+
+The default environment is kept small for the new RigFlow4D path:
+
+```bash
+pip install -r requirements.txt
+pip install -r requirements-dev.txt  # tests only
+```
+
+For GPU training, prefer a cloud image with PyTorch already installed, or install the CUDA-matched PyTorch wheel recommended by the provider before installing `requirements.txt`. Legacy MoCapAnything/TripoSG reference scripts use heavier optional packages in `requirements-legacy.txt`.
+
 ## Copied Project Skeleton
 
 The initial structure mirrors the current project:

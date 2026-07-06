@@ -1,26 +1,36 @@
 #!/bin/bash
+set -euo pipefail
 
-# Install TripoSG
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-if [ -d "TripoSG/.git" ]; then
-    echo "TripoSG repo already installed."
+ENV_NAME="${ENV_NAME:-rigflow4d}"
+PYTHON_VERSION="${PYTHON_VERSION:-3.10}"
+INSTALL_DEV="${INSTALL_DEV:-1}"
+
+if command -v conda >/dev/null 2>&1; then
+    CONDA_BASE="$(conda info --base)"
+    # shellcheck disable=SC1091
+    source "$CONDA_BASE/etc/profile.d/conda.sh"
+
+    if conda env list | awk '{print $1}' | grep -qx "$ENV_NAME"; then
+        echo "Conda environment '$ENV_NAME' already exists."
+    else
+        echo "Creating conda environment '$ENV_NAME' with Python $PYTHON_VERSION..."
+        conda create -y -n "$ENV_NAME" "python=$PYTHON_VERSION"
+    fi
+    conda activate "$ENV_NAME"
 else
-    git clone https://github.com/VAST-AI-Research/TripoSG
+    echo "Conda was not found; installing into the current Python environment."
 fi
 
-ENV_NAME="mocapanything"
-# Check if environment exists
-if conda env list | grep -q "^$ENV_NAME "; then
-    echo "Conda environment '$ENV_NAME' already exists."
-    conda activate $ENV_NAME
+python -m pip install --upgrade pip
+
+if [ "$INSTALL_DEV" = "1" ]; then
+    python -m pip install -r requirements-dev.txt
 else
-    echo "Creating conda environment '$ENV_NAME'..."
-    conda create -y -n $ENV_NAME python=$PYTHON_VERSION
+    python -m pip install -r requirements.txt
 fi
 
-if [-d ]
-
-pip install -r TripoSG/requirements.txt
+echo "RigFlow4D environment is ready."
 
