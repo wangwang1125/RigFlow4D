@@ -133,7 +133,7 @@ class KinematicVAE(nn.Module):
         self.decoder_norm = nn.LayerNorm(hidden_dim)
         self.output_projection = nn.Linear(hidden_dim, feature_dim)
 
-    def forward(self, batch: Dict[str, Tensor]) -> KinematicVAEOutput:
+    def forward(self, batch: Dict[str, Tensor], sample_posterior: bool = True) -> KinematicVAEOutput:
         positions = batch["positions"]
         rotations = batch["local_rotations_6d"]
         time_mask = _mask_or_ones(batch.get("time_mask"), positions.shape[:2], positions.device)
@@ -150,7 +150,7 @@ class KinematicVAE(nn.Module):
         pooled = self._masked_pool(self.encoder_norm(x), time_mask=time_mask, joint_mask=joint_mask)
         mu = self.to_mu(pooled)
         logvar = self.to_logvar(pooled).clamp(min=-20.0, max=20.0)
-        z = self.reparameterize(mu, logvar)
+        z = self.reparameterize(mu, logvar) if sample_posterior else mu
 
         decoded = self._decode(z, frames=positions.shape[1], joints=positions.shape[2], time_mask=time_mask, joint_mask=joint_mask)
         return KinematicVAEOutput(

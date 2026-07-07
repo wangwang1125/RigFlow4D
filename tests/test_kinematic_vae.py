@@ -53,6 +53,26 @@ def test_kinematic_vae_decoder_keeps_time_and_joint_structure():
     assert not torch.allclose(output.positions[:, 0, 0], output.positions[:, 0, 1])
 
 
+def test_kinematic_vae_can_reconstruct_from_posterior_mean_deterministically():
+    torch.manual_seed(5)
+    batch = make_batch(batch_size=1, frames=4, joints=5)
+    model = KinematicVAE(
+        feature_dim=9,
+        hidden_dim=32,
+        latent_dim=12,
+        num_layers=1,
+        num_heads=4,
+        dropout=0.0,
+    )
+    model.eval()
+
+    first = model(batch, sample_posterior=False)
+    second = model(batch, sample_posterior=False)
+
+    torch.testing.assert_close(first.z, first.mu)
+    torch.testing.assert_close(first.positions, second.positions)
+
+
 def test_kinematic_vae_loss_is_finite_with_masks():
     batch = make_batch()
     batch["joint_mask"][0, -2:] = False

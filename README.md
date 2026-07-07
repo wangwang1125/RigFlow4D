@@ -86,6 +86,14 @@ python train/rigflow4d_stage1_vae.py \
   --device cuda
 ```
 
+Visualize Stage 1 reconstruction:
+
+```bash
+python inference/visualize_stage1_vae.py --device cuda
+```
+
+By default this reads `checkpoints/rigflow4d_stage1_tgvae/vae_best.pt` and writes side-by-side `Input / GT` vs `Encoder + Decoder reconstruction` GIFs, `.npz` reconstructions, and `metrics.json` under `outputs/visualize_stage1_vae/`.
+
 ## Planning Document
 
 The current research and implementation plan is copied to:
