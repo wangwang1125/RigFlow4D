@@ -61,6 +61,37 @@ RigFlow4D/
 
 Do not add extra `raw/amass/normalized/amass` nesting. The AMASS subset folders under `datasets/AMASS/` are the official dataset structure, not additional RigFlow4D layers.
 
+## Stage 1 Training
+
+After converting AMASS into `datasets/AMASS_RigFlow4D/manifest.json`, train the first motion-only kinematic VAE:
+
+```bash
+python train/rigflow4d_stage1_vae.py \
+  --data-root datasets/AMASS_RigFlow4D \
+  --manifest datasets/AMASS_RigFlow4D/manifest.json \
+  --output-dir checkpoints/rigflow4d_stage1_vae \
+  --window-size 32 \
+  --stride 16 \
+  --batch-size 64 \
+  --max-steps 100000 \
+  --lr 1e-4 \
+  --latent-dim 128 \
+  --hidden-dim 256 \
+  --device cuda \
+  --num-workers 4
+```
+
+The script writes `vae_latest.pt`, `vae_best.pt`, and `metrics.jsonl`. Resume interrupted training with:
+
+```bash
+python train/rigflow4d_stage1_vae.py \
+  --data-root datasets/AMASS_RigFlow4D \
+  --manifest datasets/AMASS_RigFlow4D/manifest.json \
+  --output-dir checkpoints/rigflow4d_stage1_vae \
+  --resume-from checkpoints/rigflow4d_stage1_vae/vae_latest.pt \
+  --device cuda
+```
+
 ## Planning Document
 
 The current research and implementation plan is copied to:
