@@ -1,5 +1,6 @@
 import subprocess
 import sys
+import warnings
 
 import numpy as np
 import pytest
@@ -36,6 +37,10 @@ def write_aist_like_npz(path, frames=4):
 
 def write_non_motion_npz(path):
     np.savez(path, metadata=np.array("not a motion file"), fps=np.array(30))
+
+
+def write_broken_npz(path):
+    path.write_bytes(b"this is not a zip npz file")
 
 
 def test_parse_amass_like_npz_outputs_motion_contract(tmp_path):
@@ -84,6 +89,18 @@ def test_parse_raw_motion_capture_reports_file_and_keys_for_non_motion_npz(tmp_p
     assert "not_motion.npz" in message
     assert "metadata" in message
     assert "fps" in message
+
+
+def test_parse_raw_motion_capture_reports_file_for_broken_npz(tmp_path):
+    source = tmp_path / "broken.npz"
+    write_broken_npz(source)
+
+    with pytest.raises(ValueError) as exc_info:
+        parse_raw_motion_capture_npz(source, source_format="amass")
+
+    message = str(exc_info.value)
+    assert "broken.npz" in message
+    assert "not a readable npz" in message
 
 
 def test_convert_raw_motion_capture_directory_writes_normalized_manifest(tmp_path):
@@ -139,7 +156,8 @@ def test_convert_raw_motion_capture_directory_can_skip_invalid_npz(tmp_path):
     write_amass_like_npz(raw_dir / "valid_motion.npz")
     write_non_motion_npz(raw_dir / "not_motion.npz")
 
-    with pytest.warns(RuntimeWarning, match="Skipping invalid raw motion npz"):
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
         manifest_path = convert_raw_motion_capture_directory(
             input_dir=raw_dir,
             output_dir=out_dir,
@@ -149,8 +167,48 @@ def test_convert_raw_motion_capture_directory_can_skip_invalid_npz(tmp_path):
         )
     adapter = NormalizedNpzAdapter(root=out_dir, manifest_path=manifest_path)
 
+    assert caught == []
     assert len(adapter) == 1
     assert adapter.samples[0]["path"] == "valid_motion.npz"
+    assert (out_dir / "skipped_raw_motion_npz.json").exists()
+
+
+def test_convert_raw_motion_capture_directory_can_skip_broken_npz(tmp_path):
+    raw_dir = tmp_path / "raw"
+    out_dir = tmp_path / "normalized"
+    raw_dir.mkdir()
+    write_amass_like_npz(raw_dir / "valid_motion.npz")
+    write_broken_npz(raw_dir / "broken.npz")
+
+    manifest_path = convert_raw_motion_capture_directory(
+        input_dir=raw_dir,
+        output_dir=out_dir,
+        dataset_name="amass",
+        source_format="amass",
+        skip_invalid=True,
+    )
+    adapter = NormalizedNpzAdapter(root=out_dir, manifest_path=manifest_path)
+
+    assert len(adapter) == 1
+    assert adapter.samples[0]["path"] == "valid_motion.npz"
+
+
+def test_convert_raw_motion_capture_directory_can_report_verbose_skips(tmp_path):
+    raw_dir = tmp_path / "raw"
+    out_dir = tmp_path / "normalized"
+    raw_dir.mkdir()
+    write_amass_like_npz(raw_dir / "valid_motion.npz")
+    write_non_motion_npz(raw_dir / "not_motion.npz")
+
+    with pytest.warns(RuntimeWarning, match="Skipping invalid raw motion npz"):
+        convert_raw_motion_capture_directory(
+            input_dir=raw_dir,
+            output_dir=out_dir,
+            dataset_name="amass",
+            source_format="amass",
+            skip_invalid=True,
+            verbose_skips=True,
+        )
 
 
 def test_convert_raw_motion_capture_directory_clears_stale_parsed_cache(tmp_path):
@@ -213,6 +271,24 @@ def test_parse_args_accepts_skip_invalid(tmp_path):
     )
 
     assert config.skip_invalid is True
+
+
+def test_parse_args_accepts_verbose_skips(tmp_path):
+    config = parse_args(
+        [
+            "--input-dir",
+            str(tmp_path / "raw"),
+            "--output-dir",
+            str(tmp_path / "normalized"),
+            "--dataset-name",
+            "amass",
+            "--skip-invalid",
+            "--verbose-skips",
+        ]
+    )
+
+    assert config.skip_invalid is True
+    assert config.verbose_skips is True
 
 
 def test_raw_motion_capture_module_runs_without_preimport_warning():

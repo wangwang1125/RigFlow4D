@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import argparse
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Mapping, Optional
 import warnings
+import zipfile
 
 import numpy as np
 
@@ -81,6 +83,7 @@ class RawMotionCaptureConfig:
     dataset_name: str
     source_format: str = "auto"
     skip_invalid: bool = False
+    verbose_skips: bool = False
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "input_dir", Path(self.input_dir))
@@ -98,7 +101,7 @@ def parse_raw_motion_capture_npz(
     path = Path(source_file)
     if source_format not in {"auto", "amass", "aistpp"}:
         raise ValueError("source_format must be one of: auto, amass, aistpp")
-    with np.load(path, allow_pickle=False) as src:
+    with _open_npz(path) as src:
         try:
             local_axis_angle = _read_local_axis_angle(src, source_format)
             root_translation = _read_root_translation(src, local_axis_angle.shape[0], source_format)
@@ -135,6 +138,7 @@ def convert_raw_motion_capture_directory(
     dataset_name: str,
     source_format: str = "auto",
     skip_invalid: bool = False,
+    verbose_skips: bool = False,
 ) -> Path:
     input_path = Path(input_dir)
     output_path = Path(output_dir)
@@ -143,17 +147,25 @@ def convert_raw_motion_capture_directory(
     _clear_generated_npz_cache(parsed_path)
 
     parsed_count = 0
+    skipped_records: list[dict[str, str]] = []
     for source_file in sorted(input_path.rglob("*.npz")):
         try:
             parsed = parse_raw_motion_capture_npz(source_file, source_format=source_format)
         except ValueError as exc:
             if not skip_invalid:
                 raise
-            warnings.warn(
-                f"Skipping invalid raw motion npz '{source_file}': {exc}",
-                RuntimeWarning,
-                stacklevel=2,
+            skipped_records.append(
+                {
+                    "path": source_file.relative_to(input_path).as_posix(),
+                    "reason": str(exc),
+                }
             )
+            if verbose_skips:
+                warnings.warn(
+                    f"Skipping invalid raw motion npz '{source_file}': {exc}",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
             continue
         relative_name = _safe_relative_npz_name(source_file.relative_to(input_path))
         np.savez(parsed_path / relative_name, **parsed)
@@ -161,6 +173,7 @@ def convert_raw_motion_capture_directory(
 
     if parsed_count == 0:
         raise ValueError(f"no valid raw motion npz files found under '{input_path}'")
+    _write_skip_report(output_path, skipped_records)
 
     return convert_motion_npz_directory(
         input_dir=parsed_path,
@@ -240,6 +253,7 @@ def parse_args(argv: Optional[Iterable[str]] = None) -> RawMotionCaptureConfig:
     parser.add_argument("--dataset-name", required=True)
     parser.add_argument("--source-format", choices=["auto", "amass", "aistpp"], default="auto")
     parser.add_argument("--skip-invalid", action="store_true")
+    parser.add_argument("--verbose-skips", action="store_true")
     args = parser.parse_args(list(argv) if argv is not None else None)
     return RawMotionCaptureConfig(
         input_dir=args.input_dir,
@@ -247,6 +261,7 @@ def parse_args(argv: Optional[Iterable[str]] = None) -> RawMotionCaptureConfig:
         dataset_name=args.dataset_name,
         source_format=args.source_format,
         skip_invalid=args.skip_invalid,
+        verbose_skips=args.verbose_skips,
     )
 
 
@@ -258,6 +273,7 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
         dataset_name=config.dataset_name,
         source_format=config.source_format,
         skip_invalid=config.skip_invalid,
+        verbose_skips=config.verbose_skips,
     )
     print(manifest_path)
     return 0
@@ -303,6 +319,25 @@ def _select_pose_key(src: Mapping[str, np.ndarray], source_format: str) -> str:
 def _format_npz_keys(src: Mapping[str, np.ndarray]) -> str:
     keys = list(src.keys())
     return ", ".join(keys) if keys else "<none>"
+
+
+def _open_npz(path: Path) -> np.lib.npyio.NpzFile:
+    try:
+        return np.load(path, allow_pickle=False)
+    except (OSError, ValueError, zipfile.BadZipFile, EOFError) as exc:
+        raise ValueError(f"failed to parse raw motion npz '{path}': not a readable npz ({exc})") from exc
+
+
+def _write_skip_report(output_path: Path, skipped_records: list[dict[str, str]]) -> None:
+    report_path = output_path / "skipped_raw_motion_npz.json"
+    if not skipped_records:
+        if report_path.exists():
+            report_path.unlink()
+        return
+    report_path.write_text(
+        json.dumps({"skipped": skipped_records}, indent=2),
+        encoding="utf-8",
+    )
 
 
 def _clear_generated_npz_cache(parsed_path: Path) -> None:
