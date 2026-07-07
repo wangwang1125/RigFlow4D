@@ -1,0 +1,198 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2600" height="1650" viewBox="0 0 2600 1650">
+<defs>
+<marker id="arrow0" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="#0891b2"/></marker>
+<marker id="arrow1" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="#15803d"/></marker>
+<marker id="arrow2" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="#2563eb"/></marker>
+<marker id="arrow3" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="#6d5bd0"/></marker>
+<marker id="arrow4" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="#d92d5b"/></marker>
+<marker id="arrow5" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="#ea7600"/></marker>
+</defs>
+<rect width="2600" height="1650" fill="#fbfcfe"/>
+<text x="70" y="82" font-family="Arial, Helvetica, sans-serif" font-size="48" font-weight="700" fill="#1f2937">RigFlow4D Network Architecture</text>
+<text x="72" y="125" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#667085">Camera-optional visual encoding + topology-conditioned kinematic latent flow for arbitrary rig motion</text>
+<rect x="45" y="145" width="2510" height="560" rx="18" fill="#ffffff" stroke="#c7d7ee" stroke-width="3"/>
+<text x="71" y="195" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="700" fill="#1f2937">A. Visual-to-Rig Motion Pipeline</text>
+<rect x="45" y="745" width="2510" height="790" rx="18" fill="#ffffff" stroke="#c7d7ee" stroke-width="3"/>
+<text x="71" y="795" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="700" fill="#1f2937">B. Topology-Conditioned Stage 1 TG-VAE and Latent Flow Refinement</text>
+<line x1="380" y1="287" x2="455" y2="287" stroke="#2563eb" stroke-width="4" marker-end="url(#arrow2)"/>
+
+<line x1="770" y1="287" x2="835" y2="287" stroke="#2563eb" stroke-width="4" marker-end="url(#arrow2)"/>
+
+<line x1="380" y1="447" x2="835" y2="288" stroke="#0891b2" stroke-width="4" marker-end="url(#arrow0)" stroke-dasharray="14 9"/>
+<text x="607" y="355" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="600" fill="#0891b2">optional camera relation</text>
+<line x1="380" y1="602" x2="455" y2="590" stroke="#15803d" stroke-width="4" marker-end="url(#arrow1)"/>
+
+<line x1="810" y1="590" x2="875" y2="587" stroke="#15803d" stroke-width="4" marker-end="url(#arrow1)"/>
+
+<line x1="1190" y1="287" x2="1275" y2="405" stroke="#2563eb" stroke-width="4" marker-end="url(#arrow2)"/>
+<text x="1232" y="334" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="600" fill="#2563eb">fused visual tokens</text>
+<line x1="1195" y1="587" x2="1275" y2="405" stroke="#15803d" stroke-width="4" marker-end="url(#arrow1)"/>
+<text x="1235" y="484" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="600" fill="#15803d">rig queries</text>
+<line x1="1635" y1="405" x2="1710" y2="405" stroke="#0891b2" stroke-width="4" marker-end="url(#arrow0)"/>
+
+<line x1="2010" y1="405" x2="2165" y2="457" stroke="#d92d5b" stroke-width="4" marker-end="url(#arrow4)"/>
+
+<line x1="1860" y1="490" x2="1880" y2="535" stroke="#6d5bd0" stroke-width="4" marker-end="url(#arrow3)"/>
+
+<line x1="2050" y1="605" x2="2165" y2="488" stroke="#6d5bd0" stroke-width="4" marker-end="url(#arrow3)"/>
+
+<line x1="380" y1="865" x2="445" y2="925" stroke="#ea7600" stroke-width="4" marker-end="url(#arrow5)" stroke-dasharray="14 9"/>
+
+<line x1="750" y1="925" x2="830" y2="945" stroke="#ea7600" stroke-width="4" marker-end="url(#arrow5)"/>
+
+<line x1="380" y1="1112" x2="550" y2="970" stroke="#15803d" stroke-width="4" marker-end="url(#arrow1)"/>
+
+<line x1="1190" y1="945" x2="1260" y2="947" stroke="#6d5bd0" stroke-width="4" marker-end="url(#arrow3)"/>
+
+<line x1="1525" y1="947" x2="1595" y2="945" stroke="#6d5bd0" stroke-width="4" marker-end="url(#arrow3)"/>
+
+<line x1="380" y1="1112" x2="1595" y2="980" stroke="#15803d" stroke-width="4" marker-end="url(#arrow1)" stroke-dasharray="14 9"/>
+
+<line x1="1975" y1="945" x2="2040" y2="947" stroke="#6d5bd0" stroke-width="4" marker-end="url(#arrow3)"/>
+
+<line x1="2340" y1="947" x2="2380" y2="957" stroke="#d92d5b" stroke-width="4" marker-end="url(#arrow4)"/>
+
+<line x1="980" y1="1292" x2="1065" y2="1295" stroke="#0891b2" stroke-width="4" marker-end="url(#arrow0)"/>
+
+<line x1="1392" y1="1025" x2="1245" y2="1215" stroke="#6d5bd0" stroke-width="4" marker-end="url(#arrow3)" stroke-dasharray="14 9"/>
+<text x="1318" y="1108" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="600" fill="#6d5bd0">target latent z</text>
+<line x1="1425" y1="1295" x2="1515" y2="1292" stroke="#6d5bd0" stroke-width="4" marker-end="url(#arrow3)"/>
+
+<line x1="1685" y1="1220" x2="2190" y2="1045" stroke="#d92d5b" stroke-width="4" marker-end="url(#arrow4)" stroke-dasharray="14 9"/>
+
+<line x1="900" y1="1420" x2="1010" y2="1050" stroke="#ea7600" stroke-width="4" marker-end="url(#arrow5)" stroke-dasharray="14 9"/>
+
+<line x1="1380" y1="1420" x2="1730" y2="1050" stroke="#ea7600" stroke-width="4" marker-end="url(#arrow5)" stroke-dasharray="14 9"/>
+
+<line x1="1830" y1="1420" x2="2190" y2="1045" stroke="#ea7600" stroke-width="4" marker-end="url(#arrow5)" stroke-dasharray="14 9"/>
+
+<rect x="80" y="220" width="300" height="135" rx="12" fill="#eaf2ff" stroke="#2563eb" stroke-width="3"/>
+<text x="98" y="254" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" fill="#2563eb">Image / Video Input</text>
+<text x="98" y="284" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">single or multi-view</text>
+<text x="98" y="311" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">B x V x T x H x W x 3</text>
+<rect x="80" y="385" width="300" height="125" rx="12" fill="#e6f8fb" stroke="#0891b2" stroke-width="3" stroke-dasharray="14 9"/>
+<text x="98" y="419" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" fill="#0891b2">Camera Hint</text>
+<text x="98" y="449" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">optional K, R, t</text>
+<text x="98" y="476" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">calibrated / weak /</text>
+<text x="98" y="503" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">unknown</text>
+<rect x="80" y="530" width="300" height="145" rx="12" fill="#eaf7ec" stroke="#15803d" stroke-width="3"/>
+<text x="98" y="564" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" fill="#15803d">Target Rig Graph</text>
+<text x="98" y="594" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">J joints, parents E</text>
+<text x="98" y="621" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">rest offsets, masks</text>
+<text x="98" y="648" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">chain coordinates</text>
+<rect x="80" y="800" width="300" height="130" rx="12" fill="#fff3e6" stroke="#ea7600" stroke-width="3" stroke-dasharray="14 9"/>
+<text x="98" y="834" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" fill="#ea7600">Motion Labels</text>
+<text x="98" y="864" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">positions, root traj</text>
+<text x="98" y="891" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">local rot6D</text>
+<text x="98" y="918" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">training only</text>
+<rect x="455" y="225" width="315" height="125" rx="12" fill="#eaf2ff" stroke="#2563eb" stroke-width="3"/>
+<text x="473" y="259" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" fill="#2563eb">DINOv3 Dense Encoder</text>
+<text x="473" y="289" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">frozen / LoRA optional</text>
+<text x="473" y="316" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">patch + global tokens</text>
+<rect x="835" y="220" width="355" height="135" rx="12" fill="#eaf2ff" stroke="#2563eb" stroke-width="3"/>
+<text x="853" y="254" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" fill="#2563eb">View-Time Relation Transformer</text>
+<text x="853" y="284" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">camera-optional fusion</text>
+<text x="853" y="311" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">token dropout + masks</text>
+<text x="853" y="338" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">Z_v: B x T x P x d</text>
+<rect x="455" y="515" width="355" height="150" rx="12" fill="#eaf7ec" stroke="#15803d" stroke-width="3"/>
+<text x="473" y="549" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" fill="#15803d">Topology Encoder</text>
+<text x="473" y="579" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">topology token per joint</text>
+<text x="473" y="606" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">offset, length, depth</text>
+<text x="473" y="633" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">root flag, chain coordinate</text>
+<rect x="875" y="510" width="320" height="155" rx="12" fill="#eaf7ec" stroke="#15803d" stroke-width="3"/>
+<text x="893" y="544" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" fill="#15803d">Rig Query Builder</text>
+<text x="893" y="574" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">Q_r: B x J x d</text>
+<text x="893" y="601" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">joint mask aware</text>
+<text x="893" y="628" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">no fixed joint index</text>
+<text x="893" y="655" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">needed</text>
+<rect x="1275" y="320" width="360" height="170" rx="12" fill="#e6f8fb" stroke="#0891b2" stroke-width="3"/>
+<text x="1293" y="354" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" fill="#0891b2">Skeleton-Peer Decoder</text>
+<text x="1293" y="384" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">visual tokens x rig queries</text>
+<text x="1293" y="411" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">cross-view/time attention</text>
+<text x="1293" y="438" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">direct rig-native pose seed</text>
+<rect x="1710" y="320" width="300" height="170" rx="12" fill="#f0edff" stroke="#6d5bd0" stroke-width="3"/>
+<text x="1728" y="354" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" fill="#6d5bd0">Initial Motion Seed P0</text>
+<text x="1728" y="384" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">root traj</text>
+<text x="1728" y="411" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">root-relative joints</text>
+<text x="1728" y="438" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">local rot6D, contact</text>
+<rect x="1710" y="535" width="340" height="140" rx="12" fill="#f0edff" stroke="#6d5bd0" stroke-width="3"/>
+<text x="1728" y="569" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" fill="#6d5bd0">Latent Flow Refinement</text>
+<text x="1728" y="599" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">conditioned flow matching</text>
+<text x="1728" y="626" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">z_t, t, c -&gt; velocity</text>
+<text x="1728" y="653" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">multi-hypothesis Delta P</text>
+<rect x="2165" y="370" width="330" height="175" rx="12" fill="#fff0f3" stroke="#d92d5b" stroke-width="3"/>
+<text x="2183" y="404" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" fill="#d92d5b">Rig-Native 4D Output</text>
+<text x="2183" y="434" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">absolute joints P*</text>
+<text x="2183" y="461" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">root trajectory</text>
+<text x="2183" y="488" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">local rotations</text>
+<text x="2183" y="515" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">contact / uncertainty</text>
+<rect x="445" y="850" width="305" height="150" rx="12" fill="#fff3e6" stroke="#ea7600" stroke-width="3"/>
+<text x="463" y="884" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" fill="#ea7600">Motion Factorization</text>
+<text x="463" y="914" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">P_rel = P - root</text>
+<text x="463" y="941" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">root delta tokens</text>
+<text x="463" y="968" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">local rot6D</text>
+<rect x="80" y="1040" width="300" height="145" rx="12" fill="#eaf7ec" stroke="#15803d" stroke-width="3"/>
+<text x="98" y="1074" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" fill="#15803d">Topology Tokens</text>
+<text x="98" y="1104" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">parents + rest offsets</text>
+<text x="98" y="1131" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">bone length + depth</text>
+<text x="98" y="1158" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">chain coordinate</text>
+<rect x="830" y="840" width="360" height="210" rx="12" fill="#f0edff" stroke="#6d5bd0" stroke-width="3"/>
+<text x="848" y="874" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" fill="#6d5bd0">TG-VAE Encoder x L</text>
+<text x="848" y="904" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">input projection</text>
+<text x="848" y="931" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">time embedding</text>
+<text x="848" y="958" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">topology embedding</text>
+<text x="848" y="985" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">Temporal SA -&gt; Graph Mixer -&gt;</text>
+<text x="848" y="1012" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">Spatial SA</text>
+<rect x="1260" y="870" width="265" height="155" rx="12" fill="#f0edff" stroke="#6d5bd0" stroke-width="3"/>
+<text x="1278" y="904" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" fill="#6d5bd0">Latent Posterior</text>
+<text x="1278" y="934" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">masked pool</text>
+<text x="1278" y="961" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">mu / logvar</text>
+<text x="1278" y="988" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">sample z or use mu</text>
+<rect x="1595" y="840" width="380" height="210" rx="12" fill="#f0edff" stroke="#6d5bd0" stroke-width="3"/>
+<text x="1613" y="874" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" fill="#6d5bd0">Topology-Conditioned Decoder x L</text>
+<text x="1613" y="904" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">z + time queries</text>
+<text x="1613" y="931" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">topology embedding</text>
+<text x="1613" y="958" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">Temporal SA -&gt; Graph Mixer -&gt;</text>
+<text x="1613" y="985" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">Spatial SA</text>
+<rect x="2040" y="850" width="300" height="195" rx="12" fill="#f0edff" stroke="#6d5bd0" stroke-width="3"/>
+<text x="2058" y="884" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" fill="#6d5bd0">Motion Composition</text>
+<text x="2058" y="914" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">predict P_rel_hat</text>
+<text x="2058" y="941" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">root_hat from root delta</text>
+<text x="2058" y="968" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">rot6D_hat</text>
+<text x="2058" y="995" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">P_hat = P_rel_hat +</text>
+<text x="2058" y="1022" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">root_hat</text>
+<rect x="2380" y="870" width="145" height="175" rx="12" fill="#fff0f3" stroke="#d92d5b" stroke-width="3"/>
+<text x="2398" y="904" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" fill="#d92d5b">Stage 1 Output</text>
+<text x="2398" y="934" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">P_rel</text>
+<text x="2398" y="961" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">root</text>
+<text x="2398" y="988" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">P_abs</text>
+<text x="2398" y="1015" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">rot6D</text>
+<rect x="640" y="1220" width="340" height="145" rx="12" fill="#e6f8fb" stroke="#0891b2" stroke-width="3"/>
+<text x="658" y="1254" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" fill="#0891b2">Condition Encoder</text>
+<text x="658" y="1284" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">visual tokens</text>
+<text x="658" y="1311" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">rig topology</text>
+<text x="658" y="1338" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">pose seed P0</text>
+<rect x="1065" y="1215" width="360" height="160" rx="12" fill="#f0edff" stroke="#6d5bd0" stroke-width="3"/>
+<text x="1083" y="1249" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" fill="#6d5bd0">Latent Flow Matcher</text>
+<text x="1083" y="1279" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">sample z_t between noise and z</text>
+<text x="1083" y="1306" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">condition c, time t</text>
+<text x="1083" y="1333" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">learn velocity field v_theta</text>
+<rect x="1515" y="1220" width="340" height="145" rx="12" fill="#fff0f3" stroke="#d92d5b" stroke-width="3"/>
+<text x="1533" y="1254" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" fill="#d92d5b">Refined Latent / Motion</text>
+<text x="1533" y="1284" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">z* -&gt; VAE decoder</text>
+<text x="1533" y="1311" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">Delta P refinement</text>
+<text x="1533" y="1338" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">motion hypotheses</text>
+<rect x="420" y="1420" width="1735" height="85" rx="12" fill="#fff3e6" stroke="#ea7600" stroke-width="3" stroke-dasharray="14 9"/>
+<text x="438" y="1454" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" fill="#ea7600">Training Objectives</text>
+<text x="438" y="1484" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#1f2937">root-relative reconstruction | root position / velocity | rot6D | temporal velocity / acceleration | bone length | flow matching</text>
+<rect x="70" y="1568" width="28" height="18" rx="4" fill="#1f2937"/>
+<text x="106" y="1582" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="400" fill="#667085">solid arrow: inference data flow</text>
+<rect x="540" y="1568" width="28" height="18" rx="4" fill="#ea7600"/>
+<text x="576" y="1582" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="400" fill="#667085">dashed arrow: training supervision / optional branch</text>
+<rect x="950" y="1568" width="28" height="18" rx="4" fill="#2563eb"/>
+<text x="986" y="1582" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="400" fill="#667085">blue: visual stream</text>
+<rect x="1360" y="1568" width="28" height="18" rx="4" fill="#15803d"/>
+<text x="1396" y="1582" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="400" fill="#667085">green: rig topology stream</text>
+<rect x="1770" y="1568" width="28" height="18" rx="4" fill="#6d5bd0"/>
+<text x="1806" y="1582" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="400" fill="#667085">violet: latent motion stream</text>
+</svg>
