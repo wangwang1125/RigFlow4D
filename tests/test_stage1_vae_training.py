@@ -54,6 +54,10 @@ def make_config(tmp_path, max_steps=3, resume_from=None):
         beta=1e-3,
         latent_dim=6,
         hidden_dim=16,
+        num_layers=1,
+        num_heads=4,
+        ffn_dim=32,
+        dropout=0.0,
         val_fraction=0.25,
         log_every=1,
         eval_every=2,
@@ -125,6 +129,22 @@ def test_stage1_vae_parse_args_builds_formal_config(tmp_path):
             "3",
             "--max-steps",
             "7",
+            "--num-layers",
+            "2",
+            "--num-heads",
+            "4",
+            "--ffn-dim",
+            "64",
+            "--dropout",
+            "0.2",
+            "--velocity-weight",
+            "0.3",
+            "--acceleration-weight",
+            "0.04",
+            "--bone-length-weight",
+            "0.5",
+            "--root-velocity-weight",
+            "0.06",
             "--device",
             "cpu",
         ]
@@ -137,6 +157,14 @@ def test_stage1_vae_parse_args_builds_formal_config(tmp_path):
     assert config.stride == 4
     assert config.batch_size == 3
     assert config.max_steps == 7
+    assert config.num_layers == 2
+    assert config.num_heads == 4
+    assert config.ffn_dim == 64
+    assert config.dropout == 0.2
+    assert config.velocity_weight == 0.3
+    assert config.acceleration_weight == 0.04
+    assert config.bone_length_weight == 0.5
+    assert config.root_velocity_weight == 0.06
     assert config.device == "cpu"
 
 
@@ -159,3 +187,6 @@ def test_build_stage1_vae_uses_config_dimensions(tmp_path):
 
     assert model.hidden_dim == config.hidden_dim
     assert model.latent_dim == config.latent_dim
+    assert model.num_layers == config.num_layers
+    assert model.num_heads == config.num_heads
+    assert model.ffn_dim == config.ffn_dim

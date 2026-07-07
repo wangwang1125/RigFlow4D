@@ -83,6 +83,8 @@ def test_build_motion_dataloader_reads_normalized_npz(tmp_path):
     assert len(dataloader.dataset) > 0
     assert batch["positions"].shape == (2, 3, 4, 3)
     assert batch["local_rotations_6d"].shape == (2, 3, 4, 6)
+    assert batch["parents"].shape == (2, 4)
+    np.testing.assert_array_equal(batch["parents"][0], np.array([-1, 0, 1, 2], dtype=np.int64))
     assert batch["time_mask"].dtype == np.bool_
     assert batch["joint_mask"].dtype == np.bool_
 

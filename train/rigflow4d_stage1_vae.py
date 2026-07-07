@@ -34,6 +34,14 @@ class Stage1VAEConfig:
     beta: float = 1e-3
     latent_dim: int = 128
     hidden_dim: int = 256
+    num_layers: int = 4
+    num_heads: int = 8
+    ffn_dim: int | None = None
+    dropout: float = 0.1
+    velocity_weight: float = 0.1
+    acceleration_weight: float = 0.01
+    bone_length_weight: float = 0.1
+    root_velocity_weight: float = 0.05
     val_fraction: float = 0.05
     log_every: int = 50
     eval_every: int = 1000
@@ -58,13 +66,29 @@ class Stage1VAEConfig:
         _require_positive("max_steps", self.max_steps)
         _require_positive("latent_dim", self.latent_dim)
         _require_positive("hidden_dim", self.hidden_dim)
+        _require_positive("num_layers", self.num_layers)
+        _require_positive("num_heads", self.num_heads)
         _require_positive("log_every", self.log_every)
         _require_positive("eval_every", self.eval_every)
         _require_positive("save_every", self.save_every)
+        if self.hidden_dim % self.num_heads != 0:
+            raise ValueError("hidden_dim must be divisible by num_heads")
+        if self.ffn_dim is not None and self.ffn_dim <= 0:
+            raise ValueError("ffn_dim must be positive when provided")
+        if not 0.0 <= self.dropout < 1.0:
+            raise ValueError("dropout must be in [0, 1)")
         if self.lr <= 0:
             raise ValueError("lr must be positive")
         if self.beta < 0:
             raise ValueError("beta must be non-negative")
+        for name, value in {
+            "velocity_weight": self.velocity_weight,
+            "acceleration_weight": self.acceleration_weight,
+            "bone_length_weight": self.bone_length_weight,
+            "root_velocity_weight": self.root_velocity_weight,
+        }.items():
+            if value < 0:
+                raise ValueError(f"{name} must be non-negative")
         if not 0.0 <= self.val_fraction < 1.0:
             raise ValueError("val_fraction must be in [0, 1)")
         if self.num_workers < 0:
@@ -85,6 +109,14 @@ class Stage1VAEConfig:
             "beta": self.beta,
             "latent_dim": self.latent_dim,
             "hidden_dim": self.hidden_dim,
+            "num_layers": self.num_layers,
+            "num_heads": self.num_heads,
+            "ffn_dim": self.ffn_dim,
+            "dropout": self.dropout,
+            "velocity_weight": self.velocity_weight,
+            "acceleration_weight": self.acceleration_weight,
+            "bone_length_weight": self.bone_length_weight,
+            "root_velocity_weight": self.root_velocity_weight,
             "val_fraction": self.val_fraction,
             "log_every": self.log_every,
             "eval_every": self.eval_every,
@@ -111,6 +143,10 @@ def build_stage1_vae(config: Stage1VAEConfig) -> KinematicVAE:
         feature_dim=9,
         hidden_dim=config.hidden_dim,
         latent_dim=config.latent_dim,
+        num_layers=config.num_layers,
+        num_heads=config.num_heads,
+        ffn_dim=config.ffn_dim,
+        dropout=config.dropout,
     )
 
 
@@ -172,6 +208,8 @@ def motion_batch_to_torch(batch: Mapping[str, object], device: torch.device) -> 
             device=device,
             dtype=torch.float32,
         ),
+        "root_translation": _as_tensor(batch["root_translation"], device=device, dtype=torch.float32),
+        "parents": _as_tensor(batch["parents"], device=device, dtype=torch.long),
         "time_mask": _as_tensor(batch["time_mask"], device=device, dtype=torch.bool),
         "joint_mask": _as_tensor(batch["joint_mask"], device=device, dtype=torch.bool),
     }
@@ -182,12 +220,24 @@ def train_stage1_vae_step(
     motion_batch: Mapping[str, Tensor],
     optimizer: torch.optim.Optimizer,
     beta: float,
+    velocity_weight: float,
+    acceleration_weight: float,
+    bone_length_weight: float,
+    root_velocity_weight: float,
     grad_clip_norm: float | None,
 ) -> dict[str, float]:
     model.train()
     optimizer.zero_grad(set_to_none=True)
     output = model(dict(motion_batch))
-    losses = kinematic_vae_loss(output, dict(motion_batch), beta=beta)
+    losses = kinematic_vae_loss(
+        output,
+        dict(motion_batch),
+        beta=beta,
+        velocity_weight=velocity_weight,
+        acceleration_weight=acceleration_weight,
+        bone_length_weight=bone_length_weight,
+        root_velocity_weight=root_velocity_weight,
+    )
     losses["loss"].backward()
     if grad_clip_norm is not None:
         clip_grad_norm_(model.parameters(), grad_clip_norm)
@@ -201,16 +251,30 @@ def evaluate_stage1_vae(
     dataloader: DataLoader,
     device: torch.device,
     beta: float,
+    velocity_weight: float,
+    acceleration_weight: float,
+    bone_length_weight: float,
+    root_velocity_weight: float,
 ) -> dict[str, float]:
     model.eval()
-    totals = {"loss": 0.0, "recon_position": 0.0, "recon_rotation": 0.0, "kl": 0.0}
+    totals: dict[str, float] = {}
     batches = 0
     for batch in dataloader:
         motion_batch = motion_batch_to_torch(batch, device=device)
         output = model(motion_batch)
-        losses = kinematic_vae_loss(output, motion_batch, beta=beta)
+        losses = kinematic_vae_loss(
+            output,
+            motion_batch,
+            beta=beta,
+            velocity_weight=velocity_weight,
+            acceleration_weight=acceleration_weight,
+            bone_length_weight=bone_length_weight,
+            root_velocity_weight=root_velocity_weight,
+        )
         metrics = _float_metrics(losses)
-        for key in totals:
+        if not totals:
+            totals = {key: 0.0 for key in metrics}
+        for key in metrics:
             totals[key] += metrics[key]
         batches += 1
     if batches == 0:
@@ -255,6 +319,10 @@ def run_stage1_vae_training(config: Stage1VAEConfig) -> Stage1VAEResult:
             motion_batch=motion_batch,
             optimizer=optimizer,
             beta=config.beta,
+            velocity_weight=config.velocity_weight,
+            acceleration_weight=config.acceleration_weight,
+            bone_length_weight=config.bone_length_weight,
+            root_velocity_weight=config.root_velocity_weight,
             grad_clip_norm=config.grad_clip_norm,
         )
         last_metrics = _prefix_metrics("train", train_metrics)
@@ -267,6 +335,10 @@ def run_stage1_vae_training(config: Stage1VAEConfig) -> Stage1VAEResult:
                 dataloader=eval_loader,
                 device=device,
                 beta=config.beta,
+                velocity_weight=config.velocity_weight,
+                acceleration_weight=config.acceleration_weight,
+                bone_length_weight=config.bone_length_weight,
+                root_velocity_weight=config.root_velocity_weight,
             )
             last_metrics.update(_prefix_metrics("val", eval_metrics))
             current_val_loss = eval_metrics["loss"]
@@ -369,6 +441,14 @@ def parse_args(argv: Optional[Iterable[str]] = None) -> Stage1VAEConfig:
     parser.add_argument("--beta", type=float, default=1e-3)
     parser.add_argument("--latent-dim", type=int, default=128)
     parser.add_argument("--hidden-dim", type=int, default=256)
+    parser.add_argument("--num-layers", type=int, default=4)
+    parser.add_argument("--num-heads", type=int, default=8)
+    parser.add_argument("--ffn-dim", type=int)
+    parser.add_argument("--dropout", type=float, default=0.1)
+    parser.add_argument("--velocity-weight", type=float, default=0.1)
+    parser.add_argument("--acceleration-weight", type=float, default=0.01)
+    parser.add_argument("--bone-length-weight", type=float, default=0.1)
+    parser.add_argument("--root-velocity-weight", type=float, default=0.05)
     parser.add_argument("--val-fraction", type=float, default=0.05)
     parser.add_argument("--log-every", type=int, default=50)
     parser.add_argument("--eval-every", type=int, default=1000)
@@ -392,6 +472,14 @@ def parse_args(argv: Optional[Iterable[str]] = None) -> Stage1VAEConfig:
         beta=args.beta,
         latent_dim=args.latent_dim,
         hidden_dim=args.hidden_dim,
+        num_layers=args.num_layers,
+        num_heads=args.num_heads,
+        ffn_dim=args.ffn_dim,
+        dropout=args.dropout,
+        velocity_weight=args.velocity_weight,
+        acceleration_weight=args.acceleration_weight,
+        bone_length_weight=args.bone_length_weight,
+        root_velocity_weight=args.root_velocity_weight,
         val_fraction=args.val_fraction,
         log_every=args.log_every,
         eval_every=args.eval_every,

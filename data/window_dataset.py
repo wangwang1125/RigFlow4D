@@ -13,6 +13,7 @@ class MotionWindow:
     positions: np.ndarray
     local_rotations_6d: np.ndarray
     root_translation: np.ndarray
+    parents: np.ndarray
     time_mask: np.ndarray
     joint_mask: np.ndarray
     source_sample_index: int
@@ -77,6 +78,7 @@ class MotionWindowDataset:
             positions=positions,
             local_rotations_6d=rotations,
             root_translation=root_translation,
+            parents=sample.rig.parents.astype(np.int64, copy=False),
             time_mask=time_mask,
             joint_mask=np.ones((joint_count,), dtype=bool),
             source_sample_index=sample_index,
@@ -110,6 +112,7 @@ def collate_motion_windows(items: Sequence[MotionWindow]) -> dict[str, np.ndarra
     positions = np.zeros((batch_size, window_size, max_joints, 3), dtype=items[0].positions.dtype)
     rotations = np.zeros((batch_size, window_size, max_joints, 6), dtype=items[0].local_rotations_6d.dtype)
     root_translation = np.zeros((batch_size, window_size, 3), dtype=items[0].root_translation.dtype)
+    parents = np.full((batch_size, max_joints), fill_value=-1, dtype=np.int64)
     time_mask = np.zeros((batch_size, window_size), dtype=bool)
     joint_mask = np.zeros((batch_size, max_joints), dtype=bool)
     source_sample_index = np.zeros((batch_size,), dtype=np.int64)
@@ -133,6 +136,7 @@ def collate_motion_windows(items: Sequence[MotionWindow]) -> dict[str, np.ndarra
         positions[batch_index, :, :joints] = item.positions
         rotations[batch_index, :, :joints] = item.local_rotations_6d
         root_translation[batch_index] = item.root_translation
+        parents[batch_index, :joints] = item.parents
         time_mask[batch_index] = item.time_mask
         joint_mask[batch_index, :joints] = item.joint_mask
         source_sample_index[batch_index] = item.source_sample_index
@@ -149,6 +153,7 @@ def collate_motion_windows(items: Sequence[MotionWindow]) -> dict[str, np.ndarra
         "positions": positions,
         "local_rotations_6d": rotations,
         "root_translation": root_translation,
+        "parents": parents,
         "time_mask": time_mask,
         "joint_mask": joint_mask,
         "source_sample_index": source_sample_index,
