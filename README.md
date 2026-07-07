@@ -92,7 +92,7 @@ Visualize Stage 1 reconstruction:
 python inference/visualize_stage1_vae.py --device cuda
 ```
 
-By default this reads `checkpoints/rigflow4d_stage1_tgvae/vae_best.pt` and writes side-by-side `Input / GT` vs `Encoder + Decoder reconstruction` GIFs, `.npz` reconstructions, and `metrics.json` under `outputs/visualize_stage1_vae/`.
+By default this reads `checkpoints/rigflow4d_stage1_tgvae/vae_best.pt` and writes side-by-side `Input / GT` vs `Encoder + Decoder reconstruction` GIFs under `outputs/visualize_stage1_vae/`. Each GIF frame contains front, side, and top views in one image, plus `.npz` reconstructions and `metrics.json`.
 
 ## Planning Document
 

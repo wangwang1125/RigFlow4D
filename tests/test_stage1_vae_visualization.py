@@ -6,7 +6,7 @@ import numpy as np
 from PIL import Image
 import torch
 
-from inference.visualize_stage1_vae import Stage1VisualizationConfig, run_stage1_vae_visualization
+from inference.visualize_stage1_vae import Stage1VisualizationConfig, parse_args, run_stage1_vae_visualization
 from train.rigflow4d_stage1_vae import Stage1VAEConfig, build_stage1_vae, save_stage1_vae_checkpoint
 
 
@@ -85,6 +85,7 @@ def test_stage1_vae_visualization_writes_reconstruction_artifacts(tmp_path):
             fps=6,
             width=320,
             height=220,
+            view="multi",
             device="cpu",
         )
     )
@@ -95,13 +96,21 @@ def test_stage1_vae_visualization_writes_reconstruction_artifacts(tmp_path):
     assert result.metrics_path.exists()
     with Image.open(result.gif_paths[0]) as image:
         assert image.n_frames == 4
-        assert image.size == (640, 220)
+        assert image.size == (640, 660)
     with np.load(result.reconstruction_paths[0]) as recon:
         assert recon["input_positions"].shape == (4, 4, 3)
         assert recon["reconstructed_positions"].shape == (4, 4, 3)
         assert recon["parents"].shape == (4,)
     metrics = json.loads(result.metrics_path.read_text(encoding="utf-8"))
     assert metrics["samples"][0]["mpjpe"] >= 0
+    assert metrics["view"] == "multi"
+    assert metrics["views"] == ["front", "side", "top"]
+
+
+def test_stage1_vae_visualization_defaults_to_multi_view():
+    config = parse_args([])
+
+    assert config.view == "multi"
 
 
 def test_stage1_vae_visualization_help_runs_from_file_path():

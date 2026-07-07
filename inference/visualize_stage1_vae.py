@@ -33,6 +33,7 @@ class Stage1VisualizationConfig:
     fps: int = 12
     width: int = 480
     height: int = 360
+    view: str = "multi"
     device: str = "auto"
 
     def __post_init__(self) -> None:
@@ -50,6 +51,8 @@ class Stage1VisualizationConfig:
             raise ValueError("fps must be positive")
         if self.width <= 0 or self.height <= 0:
             raise ValueError("width and height must be positive")
+        if self.view not in {"multi", "front", "side", "top"}:
+            raise ValueError("view must be one of: multi, front, side, top")
 
 
 @dataclass(frozen=True)
@@ -105,6 +108,7 @@ def run_stage1_vae_visualization(config: Stage1VisualizationConfig) -> Stage1Vis
             parents=parents,
             width=config.width,
             height=config.height,
+            view=config.view,
         )
         save_gif(frames=frames, path=gif_path, fps=config.fps)
         np.savez(
@@ -145,6 +149,8 @@ def run_stage1_vae_visualization(config: Stage1VisualizationConfig) -> Stage1Vis
                 "manifest": str(config.manifest_path),
                 "window_size": window_size,
                 "stride": stride,
+                "view": config.view,
+                "views": list(_view_sequence(config.view)),
                 "samples": sample_metrics,
             },
             indent=2,
@@ -165,41 +171,56 @@ def render_skeleton_comparison_frames(
     parents: np.ndarray,
     width: int = 480,
     height: int = 360,
+    view: str = "multi",
 ) -> list[Image.Image]:
     if input_positions.shape != reconstructed_positions.shape:
         raise ValueError("input_positions and reconstructed_positions must have the same shape")
     if input_positions.ndim != 3 or input_positions.shape[-1] != 3:
         raise ValueError("positions must have shape [T, J, 3]")
 
-    bounds = _projection_bounds(input_positions, reconstructed_positions)
+    views = _view_sequence(view)
     frames: list[Image.Image] = []
     for frame_index in range(input_positions.shape[0]):
-        image = Image.new("RGB", (width * 2, height), color=(250, 250, 248))
+        image = Image.new("RGB", (width * 2, height * len(views)), color=(250, 250, 248))
         draw = ImageDraw.Draw(image)
-        _draw_panel(
-            draw=draw,
-            positions=input_positions[frame_index],
-            parents=parents,
-            bounds=bounds,
-            origin_x=0,
-            width=width,
-            height=height,
-            title="Input / GT before VAE",
-            color=(41, 102, 204),
+        for view_row, view_name in enumerate(views):
+            axes = _view_axes(view_name)
+            bounds = _projection_bounds(input_positions, reconstructed_positions, axes=axes)
+            origin_y = view_row * height
+            _draw_panel(
+                draw=draw,
+                positions=input_positions[frame_index],
+                parents=parents,
+                bounds=bounds,
+                axes=axes,
+                origin_x=0,
+                origin_y=origin_y,
+                width=width,
+                height=height,
+                title=f"{view_name} - Input / GT before VAE",
+                color=(41, 102, 204),
+            )
+            _draw_panel(
+                draw=draw,
+                positions=reconstructed_positions[frame_index],
+                parents=parents,
+                bounds=bounds,
+                axes=axes,
+                origin_x=width,
+                origin_y=origin_y,
+                width=width,
+                height=height,
+                title=f"{view_name} - Encoder + Decoder reconstruction",
+                color=(224, 113, 38),
+            )
+            draw.line((width, origin_y, width, origin_y + height), fill=(210, 210, 210), width=1)
+            if view_row > 0:
+                draw.line((0, origin_y, width * 2, origin_y), fill=(210, 210, 210), width=1)
+        draw.text(
+            (width - 56, height * len(views) - 24),
+            f"frame {frame_index + 1}/{input_positions.shape[0]}",
+            fill=(70, 70, 70),
         )
-        _draw_panel(
-            draw=draw,
-            positions=reconstructed_positions[frame_index],
-            parents=parents,
-            bounds=bounds,
-            origin_x=width,
-            width=width,
-            height=height,
-            title="Encoder + Decoder reconstruction",
-            color=(224, 113, 38),
-        )
-        draw.line((width, 0, width, height), fill=(210, 210, 210), width=1)
-        draw.text((width - 56, height - 24), f"frame {frame_index + 1}/{input_positions.shape[0]}", fill=(70, 70, 70))
         frames.append(image)
     return frames
 
@@ -256,6 +277,7 @@ def parse_args(argv: Optional[Iterable[str]] = None) -> Stage1VisualizationConfi
     parser.add_argument("--fps", type=int, default=12)
     parser.add_argument("--width", type=int, default=480)
     parser.add_argument("--height", type=int, default=360)
+    parser.add_argument("--view", choices=("multi", "front", "side", "top"), default="multi")
     parser.add_argument("--device", default="auto")
     args = parser.parse_args(list(argv) if argv is not None else None)
     return Stage1VisualizationConfig(
@@ -270,6 +292,7 @@ def parse_args(argv: Optional[Iterable[str]] = None) -> Stage1VisualizationConfi
         fps=args.fps,
         width=args.width,
         height=args.height,
+        view=args.view,
         device=args.device,
     )
 
@@ -300,8 +323,18 @@ def _select_sample_indices(config: Stage1VisualizationConfig, dataset_len: int) 
     return indices
 
 
-def _projection_bounds(input_positions: np.ndarray, reconstructed_positions: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    points = np.concatenate([input_positions[..., [0, 2]].reshape(-1, 2), reconstructed_positions[..., [0, 2]].reshape(-1, 2)], axis=0)
+def _projection_bounds(
+    input_positions: np.ndarray,
+    reconstructed_positions: np.ndarray,
+    axes: tuple[int, int],
+) -> tuple[np.ndarray, np.ndarray]:
+    points = np.concatenate(
+        [
+            input_positions[..., list(axes)].reshape(-1, 2),
+            reconstructed_positions[..., list(axes)].reshape(-1, 2),
+        ],
+        axis=0,
+    )
     center = 0.5 * (points.min(axis=0) + points.max(axis=0))
     extent = max(float((points.max(axis=0) - points.min(axis=0)).max()), 1e-3)
     half = 0.5 * extent * 1.2
@@ -313,15 +346,25 @@ def _draw_panel(
     positions: np.ndarray,
     parents: np.ndarray,
     bounds: tuple[np.ndarray, np.ndarray],
+    axes: tuple[int, int],
     origin_x: int,
+    origin_y: int,
     width: int,
     height: int,
     title: str,
     color: tuple[int, int, int],
 ) -> None:
-    draw.rectangle((origin_x, 0, origin_x + width, height), outline=(220, 220, 220), width=1)
-    draw.text((origin_x + 14, 12), title, fill=(35, 35, 35), font=ImageFont.load_default())
-    projected = _project_points(positions, bounds=bounds, origin_x=origin_x, width=width, height=height)
+    draw.rectangle((origin_x, origin_y, origin_x + width, origin_y + height), outline=(220, 220, 220), width=1)
+    draw.text((origin_x + 14, origin_y + 12), title, fill=(35, 35, 35), font=ImageFont.load_default())
+    projected = _project_points(
+        positions,
+        bounds=bounds,
+        axes=axes,
+        origin_x=origin_x,
+        origin_y=origin_y,
+        width=width,
+        height=height,
+    )
     for joint_index, parent_index in enumerate(parents.tolist()):
         if parent_index < 0 or parent_index >= len(projected):
             continue
@@ -335,17 +378,37 @@ def _draw_panel(
 def _project_points(
     positions: np.ndarray,
     bounds: tuple[np.ndarray, np.ndarray],
+    axes: tuple[int, int],
     origin_x: int,
+    origin_y: int,
     width: int,
     height: int,
 ) -> list[tuple[int, int]]:
     low, high = bounds
-    xy = positions[:, [0, 2]]
+    xy = positions[:, list(axes)]
     normalized = (xy - low) / np.maximum(high - low, 1e-6)
     padding = 32
     x = origin_x + padding + normalized[:, 0] * (width - 2 * padding)
-    y = padding + (1.0 - normalized[:, 1]) * (height - 2 * padding)
+    y = origin_y + padding + (1.0 - normalized[:, 1]) * (height - 2 * padding)
     return [(int(round(px)), int(round(py))) for px, py in zip(x, y)]
+
+
+def _view_sequence(view: str) -> tuple[str, ...]:
+    if view == "multi":
+        return ("front", "side", "top")
+    if view in {"front", "side", "top"}:
+        return (view,)
+    raise ValueError("view must be one of: multi, front, side, top")
+
+
+def _view_axes(view: str) -> tuple[int, int]:
+    if view == "front":
+        return (0, 1)
+    if view == "side":
+        return (2, 1)
+    if view == "top":
+        return (0, 2)
+    raise ValueError("view must be one of: front, side, top")
 
 
 def _bone_length_mse(input_positions: np.ndarray, reconstructed_positions: np.ndarray, parents: np.ndarray) -> float:
