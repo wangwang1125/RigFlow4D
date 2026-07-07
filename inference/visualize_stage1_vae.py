@@ -34,6 +34,9 @@ class Stage1VisualizationConfig:
     width: int = 480
     height: int = 360
     view: str = "multi"
+    selection: str = "motion"
+    candidate_windows: int = 512
+    trail_frames: int = 12
     device: str = "auto"
 
     def __post_init__(self) -> None:
@@ -53,6 +56,12 @@ class Stage1VisualizationConfig:
             raise ValueError("width and height must be positive")
         if self.view not in {"multi", "front", "side", "top"}:
             raise ValueError("view must be one of: multi, front, side, top")
+        if self.selection not in {"motion", "first"}:
+            raise ValueError("selection must be one of: motion, first")
+        if self.candidate_windows <= 0:
+            raise ValueError("candidate_windows must be positive")
+        if self.trail_frames < 0:
+            raise ValueError("trail_frames must be non-negative")
 
 
 @dataclass(frozen=True)
@@ -79,12 +88,12 @@ def run_stage1_vae_visualization(config: Stage1VisualizationConfig) -> Stage1Vis
     model.eval()
 
     config.output_dir.mkdir(parents=True, exist_ok=True)
-    sample_indices = _select_sample_indices(config, dataset_len=len(dataset))
+    selected_samples = _select_sample_indices(config, dataset=dataset)
     gif_paths: list[Path] = []
     reconstruction_paths: list[Path] = []
     sample_metrics: list[dict[str, object]] = []
 
-    for sample_index in sample_indices:
+    for sample_index, selection_score in selected_samples:
         window = dataset[sample_index]
         batch = collate_motion_windows([window])
         motion_batch = motion_batch_to_torch(batch, device=device)
@@ -109,6 +118,7 @@ def run_stage1_vae_visualization(config: Stage1VisualizationConfig) -> Stage1Vis
             width=config.width,
             height=config.height,
             view=config.view,
+            trail_frames=config.trail_frames,
         )
         save_gif(frames=frames, path=gif_path, fps=config.fps)
         np.savez(
@@ -134,6 +144,7 @@ def run_stage1_vae_visualization(config: Stage1VisualizationConfig) -> Stage1Vis
                 "start": int(batch["start"][0]),
                 "gif": gif_path.name,
                 "reconstruction": reconstruction_path.name,
+                "selection_score": float(selection_score),
             }
         )
         sample_metrics.append(metrics)
@@ -149,6 +160,9 @@ def run_stage1_vae_visualization(config: Stage1VisualizationConfig) -> Stage1Vis
                 "manifest": str(config.manifest_path),
                 "window_size": window_size,
                 "stride": stride,
+                "selection": "explicit" if config.sample_indices is not None else config.selection,
+                "candidate_windows": config.candidate_windows,
+                "trail_frames": config.trail_frames,
                 "view": config.view,
                 "views": list(_view_sequence(config.view)),
                 "samples": sample_metrics,
@@ -172,6 +186,7 @@ def render_skeleton_comparison_frames(
     width: int = 480,
     height: int = 360,
     view: str = "multi",
+    trail_frames: int = 12,
 ) -> list[Image.Image]:
     if input_positions.shape != reconstructed_positions.shape:
         raise ValueError("input_positions and reconstructed_positions must have the same shape")
@@ -199,6 +214,8 @@ def render_skeleton_comparison_frames(
                 height=height,
                 title=f"{view_name} - Input / GT before VAE",
                 color=(41, 102, 204),
+                history_positions=input_positions[: frame_index + 1],
+                trail_frames=trail_frames,
             )
             _draw_panel(
                 draw=draw,
@@ -212,6 +229,8 @@ def render_skeleton_comparison_frames(
                 height=height,
                 title=f"{view_name} - Encoder + Decoder reconstruction",
                 color=(224, 113, 38),
+                history_positions=reconstructed_positions[: frame_index + 1],
+                trail_frames=trail_frames,
             )
             draw.line((width, origin_y, width, origin_y + height), fill=(210, 210, 210), width=1)
             if view_row > 0:
@@ -278,6 +297,9 @@ def parse_args(argv: Optional[Iterable[str]] = None) -> Stage1VisualizationConfi
     parser.add_argument("--width", type=int, default=480)
     parser.add_argument("--height", type=int, default=360)
     parser.add_argument("--view", choices=("multi", "front", "side", "top"), default="multi")
+    parser.add_argument("--selection", choices=("motion", "first"), default="motion")
+    parser.add_argument("--candidate-windows", type=int, default=512)
+    parser.add_argument("--trail-frames", type=int, default=12)
     parser.add_argument("--device", default="auto")
     args = parser.parse_args(list(argv) if argv is not None else None)
     return Stage1VisualizationConfig(
@@ -293,6 +315,9 @@ def parse_args(argv: Optional[Iterable[str]] = None) -> Stage1VisualizationConfi
         width=args.width,
         height=args.height,
         view=args.view,
+        selection=args.selection,
+        candidate_windows=args.candidate_windows,
+        trail_frames=args.trail_frames,
         device=args.device,
     )
 
@@ -312,15 +337,45 @@ def _checkpoint_stage1_config(checkpoint: dict[str, object]) -> Stage1VAEConfig:
     return Stage1VAEConfig(**raw_config)
 
 
-def _select_sample_indices(config: Stage1VisualizationConfig, dataset_len: int) -> list[int]:
+def _select_sample_indices(config: Stage1VisualizationConfig, dataset: MotionWindowDataset) -> list[tuple[int, float]]:
+    dataset_len = len(dataset)
     if config.sample_indices is not None:
-        indices = config.sample_indices
+        indices = [(index, _motion_score(dataset[index])) for index in config.sample_indices]
+    elif config.selection == "first":
+        indices = [(index, _motion_score(dataset[index])) for index in range(min(config.num_samples, dataset_len))]
     else:
-        indices = list(range(min(config.num_samples, dataset_len)))
-    for index in indices:
+        indices = _select_motionful_sample_indices(
+            dataset=dataset,
+            num_samples=config.num_samples,
+            candidate_windows=config.candidate_windows,
+        )
+    for index, _ in indices:
         if index < 0 or index >= dataset_len:
             raise IndexError(f"sample index {index} is out of range for {dataset_len} windows")
     return indices
+
+
+def _select_motionful_sample_indices(
+    dataset: MotionWindowDataset,
+    num_samples: int,
+    candidate_windows: int,
+) -> list[tuple[int, float]]:
+    candidate_count = min(len(dataset), max(num_samples, candidate_windows))
+    if candidate_count <= 0:
+        return []
+    candidate_indices = np.linspace(0, len(dataset) - 1, candidate_count, dtype=np.int64)
+    scored = [(int(index), _motion_score(dataset[int(index)])) for index in np.unique(candidate_indices)]
+    scored.sort(key=lambda item: (-item[1], item[0]))
+    return scored[:num_samples]
+
+
+def _motion_score(window: object) -> float:
+    positions = np.asarray(window.positions)
+    valid_positions = positions[np.asarray(window.time_mask, dtype=bool)]
+    if valid_positions.shape[0] <= 1:
+        return 0.0
+    velocities = np.diff(valid_positions, axis=0)
+    return float(np.linalg.norm(velocities, axis=-1).mean())
 
 
 def _projection_bounds(
@@ -353,6 +408,8 @@ def _draw_panel(
     height: int,
     title: str,
     color: tuple[int, int, int],
+    history_positions: np.ndarray | None = None,
+    trail_frames: int = 0,
 ) -> None:
     draw.rectangle((origin_x, origin_y, origin_x + width, origin_y + height), outline=(220, 220, 220), width=1)
     draw.text((origin_x + 14, origin_y + 12), title, fill=(35, 35, 35), font=ImageFont.load_default())
@@ -365,6 +422,20 @@ def _draw_panel(
         width=width,
         height=height,
     )
+    if history_positions is not None and trail_frames > 0:
+        _draw_motion_trail(
+            draw=draw,
+            history_positions=history_positions,
+            parents=parents,
+            bounds=bounds,
+            axes=axes,
+            origin_x=origin_x,
+            origin_y=origin_y,
+            width=width,
+            height=height,
+            color=color,
+            trail_frames=trail_frames,
+        )
     for joint_index, parent_index in enumerate(parents.tolist()):
         if parent_index < 0 or parent_index >= len(projected):
             continue
@@ -373,6 +444,67 @@ def _draw_panel(
         radius = 5 if point_index == 0 else 3
         fill = (30, 30, 30) if point_index == 0 else color
         draw.ellipse((point[0] - radius, point[1] - radius, point[0] + radius, point[1] + radius), fill=fill)
+
+
+def _draw_motion_trail(
+    draw: ImageDraw.ImageDraw,
+    history_positions: np.ndarray,
+    parents: np.ndarray,
+    bounds: tuple[np.ndarray, np.ndarray],
+    axes: tuple[int, int],
+    origin_x: int,
+    origin_y: int,
+    width: int,
+    height: int,
+    color: tuple[int, int, int],
+    trail_frames: int,
+) -> None:
+    if history_positions.shape[0] <= 1:
+        return
+    start = max(0, history_positions.shape[0] - trail_frames - 1)
+    trail = history_positions[start:-1]
+    root_points: list[tuple[int, int]] = []
+    for ghost_index, ghost_positions in enumerate(trail):
+        fade = 0.12 + 0.18 * float(ghost_index + 1) / max(1, trail.shape[0])
+        ghost_color = _blend_color(color, (250, 250, 248), fade)
+        projected = _project_points(
+            ghost_positions,
+            bounds=bounds,
+            axes=axes,
+            origin_x=origin_x,
+            origin_y=origin_y,
+            width=width,
+            height=height,
+        )
+        root_points.append(projected[0])
+        for joint_index, parent_index in enumerate(parents.tolist()):
+            if parent_index < 0 or parent_index >= len(projected):
+                continue
+            draw.line((*projected[parent_index], *projected[joint_index]), fill=ghost_color, width=1)
+    current_root = _project_points(
+        history_positions[-1],
+        bounds=bounds,
+        axes=axes,
+        origin_x=origin_x,
+        origin_y=origin_y,
+        width=width,
+        height=height,
+    )[0]
+    root_points.append(current_root)
+    if len(root_points) > 1:
+        draw.line(root_points, fill=_blend_color(color, (250, 250, 248), 0.45), width=2)
+
+
+def _blend_color(
+    foreground: tuple[int, int, int],
+    background: tuple[int, int, int],
+    foreground_weight: float,
+) -> tuple[int, int, int]:
+    foreground_weight = max(0.0, min(1.0, foreground_weight))
+    return tuple(
+        int(round(background_channel * (1.0 - foreground_weight) + foreground_channel * foreground_weight))
+        for foreground_channel, background_channel in zip(foreground, background)
+    )
 
 
 def _project_points(

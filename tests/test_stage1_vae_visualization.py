@@ -10,10 +10,15 @@ from inference.visualize_stage1_vae import Stage1VisualizationConfig, parse_args
 from train.rigflow4d_stage1_vae import Stage1VAEConfig, build_stage1_vae, save_stage1_vae_checkpoint
 
 
-def write_normalized_dataset(tmp_path, frames=10, joints=4):
+def write_normalized_dataset(tmp_path, frames=10, joints=4, positions=None):
     tmp_path.mkdir(parents=True, exist_ok=True)
     sample_path = tmp_path / "sample_0000.npz"
     manifest_path = tmp_path / "manifest.json"
+    if positions is None:
+        positions = np.random.randn(frames, joints, 3).astype(np.float32)
+    else:
+        positions = np.asarray(positions, dtype=np.float32)
+        frames, joints = positions.shape[:2]
     np.savez(
         sample_path,
         dataset_name=np.array("unit"),
@@ -25,7 +30,7 @@ def write_normalized_dataset(tmp_path, frames=10, joints=4):
         joint_names=np.array([f"joint_{i}" for i in range(joints)]),
         chain_ids=np.arange(joints, dtype=np.int64),
         chain_coordinates=np.linspace(0.0, 1.0, joints, dtype=np.float32),
-        positions=np.random.randn(frames, joints, 3).astype(np.float32),
+        positions=positions,
         local_rotations_6d=np.random.randn(frames, joints, 6).astype(np.float32),
         root_translation=np.zeros((frames, 3), dtype=np.float32),
     )
@@ -111,6 +116,38 @@ def test_stage1_vae_visualization_defaults_to_multi_view():
     config = parse_args([])
 
     assert config.view == "multi"
+    assert config.selection == "motion"
+    assert config.trail_frames == 12
+
+
+def test_stage1_vae_visualization_defaults_to_motionful_windows(tmp_path):
+    positions = np.zeros((12, 4, 3), dtype=np.float32)
+    positions[:, :, 1] = np.linspace(0.0, 0.3, 4, dtype=np.float32)
+    positions[4:, :, 0] = np.linspace(0.0, 4.0, 8, dtype=np.float32)[:, None]
+    data_root, manifest_path = write_normalized_dataset(tmp_path / "data", positions=positions)
+    checkpoint_path = write_checkpoint(tmp_path, data_root, manifest_path)
+    output_dir = tmp_path / "vis"
+
+    result = run_stage1_vae_visualization(
+        Stage1VisualizationConfig(
+            data_root=data_root,
+            manifest_path=manifest_path,
+            checkpoint_path=checkpoint_path,
+            output_dir=output_dir,
+            window_size=4,
+            stride=2,
+            num_samples=1,
+            width=320,
+            height=220,
+            view="front",
+            device="cpu",
+        )
+    )
+
+    metrics = json.loads(result.metrics_path.read_text(encoding="utf-8"))
+    assert metrics["selection"] == "motion"
+    assert metrics["trail_frames"] == 12
+    assert metrics["samples"][0]["start"] > 0
 
 
 def test_stage1_vae_visualization_help_runs_from_file_path():
