@@ -1,5 +1,7 @@
 import json
 import math
+import subprocess
+import sys
 
 import numpy as np
 import torch
@@ -172,3 +174,15 @@ def test_parse_args_builds_smoke_config(tmp_path):
     assert config.latent_dim == 8
     assert config.condition_dim == 12
     assert config.visual_dim == 6
+
+
+def test_latent_refiner_script_help_runs_from_file_path():
+    result = subprocess.run(
+        [sys.executable, "train/rigflow4d_latent_refiner.py", "--help"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    assert "RigFlow4D latent refiner smoke training" in result.stdout
