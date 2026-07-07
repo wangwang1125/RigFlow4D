@@ -291,6 +291,11 @@ def test_collate_motion_windows_pads_joint_dimension():
     assert batch["positions"].shape == (2, 3, 5, 3)
     assert batch["local_rotations_6d"].shape == (2, 3, 5, 6)
     assert batch["root_translation"].shape == (2, 3, 3)
+    assert batch["parents"].shape == (2, 5)
+    assert batch["rest_offsets"].shape == (2, 5, 3)
+    assert batch["chain_ids"].shape == (2, 5)
+    assert batch["chain_coordinates"].shape == (2, 5)
+    np.testing.assert_array_equal(batch["parents"][0], np.array([-1, 0, 1, -1, -1]))
     np.testing.assert_array_equal(batch["joint_mask"][0], np.array([True, True, True, False, False]))
     np.testing.assert_array_equal(batch["joint_mask"][1], np.array([True, True, True, True, True]))
 

@@ -38,6 +38,9 @@ class Stage1VAEConfig:
     num_heads: int = 8
     ffn_dim: int | None = 1024
     dropout: float = 0.1
+    use_topology_conditioning: bool = True
+    use_graph_mixer: bool = True
+    use_joint_index_embedding: bool = False
     root_position_weight: float = 1.0
     velocity_weight: float = 0.1
     acceleration_weight: float = 0.01
@@ -115,6 +118,9 @@ class Stage1VAEConfig:
             "num_heads": self.num_heads,
             "ffn_dim": self.ffn_dim,
             "dropout": self.dropout,
+            "use_topology_conditioning": self.use_topology_conditioning,
+            "use_graph_mixer": self.use_graph_mixer,
+            "use_joint_index_embedding": self.use_joint_index_embedding,
             "root_position_weight": self.root_position_weight,
             "velocity_weight": self.velocity_weight,
             "acceleration_weight": self.acceleration_weight,
@@ -150,6 +156,9 @@ def build_stage1_vae(config: Stage1VAEConfig) -> KinematicVAE:
         num_heads=config.num_heads,
         ffn_dim=config.ffn_dim,
         dropout=config.dropout,
+        use_topology_conditioning=config.use_topology_conditioning,
+        use_graph_mixer=config.use_graph_mixer,
+        use_joint_index_embedding=config.use_joint_index_embedding,
     )
 
 
@@ -213,6 +222,9 @@ def motion_batch_to_torch(batch: Mapping[str, object], device: torch.device) -> 
         ),
         "root_translation": _as_tensor(batch["root_translation"], device=device, dtype=torch.float32),
         "parents": _as_tensor(batch["parents"], device=device, dtype=torch.long),
+        "rest_offsets": _as_tensor(batch["rest_offsets"], device=device, dtype=torch.float32),
+        "chain_ids": _as_tensor(batch["chain_ids"], device=device, dtype=torch.long),
+        "chain_coordinates": _as_tensor(batch["chain_coordinates"], device=device, dtype=torch.float32),
         "time_mask": _as_tensor(batch["time_mask"], device=device, dtype=torch.bool),
         "joint_mask": _as_tensor(batch["joint_mask"], device=device, dtype=torch.bool),
     }
@@ -454,6 +466,9 @@ def parse_args(argv: Optional[Iterable[str]] = None) -> Stage1VAEConfig:
     parser.add_argument("--num-heads", type=int, default=8)
     parser.add_argument("--ffn-dim", type=int, default=1024)
     parser.add_argument("--dropout", type=float, default=0.1)
+    parser.add_argument("--no-topology-conditioning", action="store_false", dest="use_topology_conditioning")
+    parser.add_argument("--no-graph-mixer", action="store_false", dest="use_graph_mixer")
+    parser.add_argument("--use-joint-index-embedding", action="store_true")
     parser.add_argument("--root-position-weight", type=float, default=1.0)
     parser.add_argument("--velocity-weight", type=float, default=0.1)
     parser.add_argument("--acceleration-weight", type=float, default=0.01)
@@ -486,6 +501,9 @@ def parse_args(argv: Optional[Iterable[str]] = None) -> Stage1VAEConfig:
         num_heads=args.num_heads,
         ffn_dim=args.ffn_dim,
         dropout=args.dropout,
+        use_topology_conditioning=args.use_topology_conditioning,
+        use_graph_mixer=args.use_graph_mixer,
+        use_joint_index_embedding=args.use_joint_index_embedding,
         root_position_weight=args.root_position_weight,
         velocity_weight=args.velocity_weight,
         acceleration_weight=args.acceleration_weight,

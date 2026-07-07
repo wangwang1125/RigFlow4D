@@ -138,6 +138,9 @@ def test_stage1_vae_parse_args_builds_formal_config(tmp_path):
             "64",
             "--dropout",
             "0.2",
+            "--no-topology-conditioning",
+            "--no-graph-mixer",
+            "--use-joint-index-embedding",
             "--root-position-weight",
             "0.7",
             "--velocity-weight",
@@ -164,6 +167,9 @@ def test_stage1_vae_parse_args_builds_formal_config(tmp_path):
     assert config.num_heads == 4
     assert config.ffn_dim == 64
     assert config.dropout == 0.2
+    assert config.use_topology_conditioning is False
+    assert config.use_graph_mixer is False
+    assert config.use_joint_index_embedding is True
     assert config.root_position_weight == 0.7
     assert config.velocity_weight == 0.3
     assert config.acceleration_weight == 0.04
@@ -186,6 +192,9 @@ def test_stage1_vae_parse_args_uses_tgvae_defaults():
     assert config.num_layers == 4
     assert config.num_heads == 8
     assert config.ffn_dim == 1024
+    assert config.use_topology_conditioning is True
+    assert config.use_graph_mixer is True
+    assert config.use_joint_index_embedding is False
     assert config.root_position_weight == 1.0
     assert config.velocity_weight == 0.1
     assert config.acceleration_weight == 0.01
@@ -216,3 +225,6 @@ def test_build_stage1_vae_uses_config_dimensions(tmp_path):
     assert model.num_layers == config.num_layers
     assert model.num_heads == config.num_heads
     assert model.ffn_dim == config.ffn_dim
+    assert model.use_topology_conditioning == config.use_topology_conditioning
+    assert model.use_graph_mixer == config.use_graph_mixer
+    assert model.use_joint_index_embedding == config.use_joint_index_embedding

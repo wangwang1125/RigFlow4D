@@ -11,6 +11,9 @@ def make_batch(batch_size=2, frames=4, joints=5):
         "time_mask": torch.ones(batch_size, frames, dtype=torch.bool),
         "joint_mask": torch.ones(batch_size, joints, dtype=torch.bool),
         "parents": torch.tensor([[-1, 0, 1, 2, 3]] * batch_size, dtype=torch.long),
+        "rest_offsets": torch.randn(batch_size, joints, 3),
+        "chain_ids": torch.arange(joints).repeat(batch_size, 1),
+        "chain_coordinates": torch.linspace(0.0, 1.0, joints).repeat(batch_size, 1),
     }
 
 
@@ -73,6 +76,32 @@ def test_kinematic_vae_can_reconstruct_from_posterior_mean_deterministically():
 
     torch.testing.assert_close(first.z, first.mu)
     torch.testing.assert_close(first.positions, second.positions)
+
+
+def test_kinematic_vae_conditions_on_skeleton_topology():
+    torch.manual_seed(7)
+    batch = make_batch(batch_size=1, frames=4, joints=5)
+    model = KinematicVAE(
+        feature_dim=9,
+        hidden_dim=32,
+        latent_dim=12,
+        num_layers=1,
+        num_heads=4,
+        dropout=0.0,
+        use_topology_conditioning=True,
+        use_graph_mixer=True,
+    )
+    model.eval()
+
+    alternate = {key: value.clone() if torch.is_tensor(value) else value for key, value in batch.items()}
+    alternate["parents"] = torch.tensor([[-1, 0, 0, 2, 2]], dtype=torch.long)
+    alternate["rest_offsets"] = batch["rest_offsets"] * torch.tensor([[[1.0, -1.0, 0.5]]])
+    alternate["chain_coordinates"] = torch.flip(batch["chain_coordinates"], dims=(1,))
+
+    first = model(batch, sample_posterior=False)
+    second = model(alternate, sample_posterior=False)
+
+    assert not torch.allclose(first.positions, second.positions)
 
 
 def test_kinematic_vae_loss_is_finite_with_masks():

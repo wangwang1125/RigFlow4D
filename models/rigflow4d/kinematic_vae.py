@@ -29,6 +29,7 @@ class FactorizedTemporalSpatialBlock(nn.Module):
         num_heads: int,
         ffn_dim: int,
         dropout: float,
+        use_graph_mixer: bool = True,
     ) -> None:
         super().__init__()
         self.temporal = nn.TransformerEncoderLayer(
@@ -49,8 +50,9 @@ class FactorizedTemporalSpatialBlock(nn.Module):
             batch_first=True,
             norm_first=True,
         )
+        self.graph_mixer = SkeletonGraphMixer(hidden_dim=hidden_dim, dropout=dropout) if use_graph_mixer else None
 
-    def forward(self, x: Tensor, time_mask: Tensor, joint_mask: Tensor) -> Tensor:
+    def forward(self, x: Tensor, time_mask: Tensor, joint_mask: Tensor, parents: Tensor | None = None) -> Tensor:
         batch_size, frames, joints, hidden_dim = x.shape
         temporal_x = x.permute(0, 2, 1, 3).reshape(batch_size * joints, frames, hidden_dim)
         temporal_pad = (~time_mask[:, None, :]).expand(batch_size, joints, frames)
@@ -60,6 +62,9 @@ class FactorizedTemporalSpatialBlock(nn.Module):
         )
         x = temporal_x.reshape(batch_size, joints, frames, hidden_dim).permute(0, 2, 1, 3)
         x = _apply_token_mask(x, time_mask=time_mask, joint_mask=joint_mask)
+        if self.graph_mixer is not None and parents is not None:
+            x = self.graph_mixer(x, parents=parents, joint_mask=joint_mask)
+            x = _apply_token_mask(x, time_mask=time_mask, joint_mask=joint_mask)
 
         spatial_x = x.reshape(batch_size * frames, joints, hidden_dim)
         spatial_pad = (~joint_mask[:, None, :]).expand(batch_size, frames, joints)
@@ -69,6 +74,40 @@ class FactorizedTemporalSpatialBlock(nn.Module):
         )
         x = spatial_x.reshape(batch_size, frames, joints, hidden_dim)
         return _apply_token_mask(x, time_mask=time_mask, joint_mask=joint_mask)
+
+
+class SkeletonGraphMixer(nn.Module):
+    """Lightweight parent-child message passing for arbitrary skeleton trees."""
+
+    def __init__(self, hidden_dim: int, dropout: float) -> None:
+        super().__init__()
+        self.norm = nn.LayerNorm(hidden_dim)
+        self.projection = nn.Linear(hidden_dim, hidden_dim)
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, x: Tensor, parents: Tensor, joint_mask: Tensor) -> Tensor:
+        batch_size, _, joints, _ = x.shape
+        parents = _parents_or_default(parents, batch_size=batch_size, joints=joints, device=x.device)
+        parents_cpu = parents.detach().cpu().tolist()
+        joint_mask_cpu = joint_mask.detach().cpu().tolist()
+
+        neighbor_sum = torch.zeros_like(x)
+        degree = x.new_zeros((batch_size, 1, joints, 1))
+        for batch_index in range(batch_size):
+            for child_index, parent_index in enumerate(parents_cpu[batch_index]):
+                if parent_index < 0 or parent_index >= joints:
+                    continue
+                if not joint_mask_cpu[batch_index][child_index] or not joint_mask_cpu[batch_index][parent_index]:
+                    continue
+                neighbor_sum[batch_index, :, child_index] += x[batch_index, :, parent_index]
+                neighbor_sum[batch_index, :, parent_index] += x[batch_index, :, child_index]
+                degree[batch_index, :, child_index] += 1.0
+                degree[batch_index, :, parent_index] += 1.0
+
+        neighbor_mean = neighbor_sum / degree.clamp_min(1.0)
+        message = self.projection(self.norm(neighbor_mean))
+        has_neighbors = (degree > 0).to(dtype=x.dtype, device=x.device)
+        return x + self.dropout(message) * has_neighbors
 
 
 class KinematicVAE(nn.Module):
@@ -81,6 +120,9 @@ class KinematicVAE(nn.Module):
         num_heads: int = 8,
         ffn_dim: int | None = None,
         dropout: float = 0.1,
+        use_topology_conditioning: bool = True,
+        use_graph_mixer: bool = True,
+        use_joint_index_embedding: bool = False,
     ) -> None:
         super().__init__()
         if hidden_dim % num_heads != 0:
@@ -103,9 +145,13 @@ class KinematicVAE(nn.Module):
         self.num_heads = num_heads
         self.ffn_dim = ffn_dim
         self.dropout = dropout
+        self.use_topology_conditioning = use_topology_conditioning
+        self.use_graph_mixer = use_graph_mixer
+        self.use_joint_index_embedding = use_joint_index_embedding
 
         motion_feature_dim = feature_dim + 3
         self.input_projection = nn.Linear(motion_feature_dim, hidden_dim)
+        self.topology_projection = nn.Linear(7, hidden_dim) if use_topology_conditioning else None
         self.encoder_blocks = nn.ModuleList(
             [
                 FactorizedTemporalSpatialBlock(
@@ -113,6 +159,7 @@ class KinematicVAE(nn.Module):
                     num_heads=num_heads,
                     ffn_dim=ffn_dim,
                     dropout=dropout,
+                    use_graph_mixer=use_graph_mixer,
                 )
                 for _ in range(num_layers)
             ]
@@ -129,6 +176,7 @@ class KinematicVAE(nn.Module):
                     num_heads=num_heads,
                     ffn_dim=ffn_dim,
                     dropout=dropout,
+                    use_graph_mixer=use_graph_mixer,
                 )
                 for _ in range(num_layers)
             ]
@@ -147,20 +195,33 @@ class KinematicVAE(nn.Module):
         root_relative_positions = positions - root_translation[:, :, None, :]
         root_delta_tokens = root_delta[:, :, None, :].expand(-1, -1, positions.shape[2], -1)
         features = torch.cat([root_relative_positions, root_delta_tokens, rotations], dim=-1)
+        topology_embedding = self._topology_embedding(batch=batch, positions=positions, joint_mask=joint_mask)
+        parents = batch.get("parents")
 
         x = self.input_projection(features)
         x = x + _time_embedding(positions.shape[1], self.hidden_dim, positions.device, x.dtype)
-        x = x + _joint_embedding(positions.shape[2], self.hidden_dim, positions.device, x.dtype)
+        if self.use_joint_index_embedding:
+            x = x + _joint_embedding(positions.shape[2], self.hidden_dim, positions.device, x.dtype)
+        if topology_embedding is not None:
+            x = x + topology_embedding[:, None]
         x = _apply_token_mask(x, time_mask=time_mask, joint_mask=joint_mask)
         for block in self.encoder_blocks:
-            x = block(x, time_mask=time_mask, joint_mask=joint_mask)
+            x = block(x, time_mask=time_mask, joint_mask=joint_mask, parents=parents)
 
         pooled = self._masked_pool(self.encoder_norm(x), time_mask=time_mask, joint_mask=joint_mask)
         mu = self.to_mu(pooled)
         logvar = self.to_logvar(pooled).clamp(min=-20.0, max=20.0)
         z = self.reparameterize(mu, logvar) if sample_posterior else mu
 
-        decoded = self._decode(z, frames=positions.shape[1], joints=positions.shape[2], time_mask=time_mask, joint_mask=joint_mask)
+        decoded = self._decode(
+            z,
+            frames=positions.shape[1],
+            joints=positions.shape[2],
+            time_mask=time_mask,
+            joint_mask=joint_mask,
+            topology_embedding=topology_embedding,
+            parents=parents,
+        )
         predicted_relative_positions = decoded[..., :3]
         predicted_root_delta_tokens = decoded[..., 3:6]
         predicted_root_delta = _masked_joint_mean(predicted_root_delta_tokens, joint_mask=joint_mask)
@@ -175,15 +236,33 @@ class KinematicVAE(nn.Module):
             z=z,
         )
 
-    def _decode(self, z: Tensor, frames: int, joints: int, time_mask: Tensor, joint_mask: Tensor) -> Tensor:
+    def _decode(
+        self,
+        z: Tensor,
+        frames: int,
+        joints: int,
+        time_mask: Tensor,
+        joint_mask: Tensor,
+        topology_embedding: Tensor | None,
+        parents: Tensor | None,
+    ) -> Tensor:
         x = self.latent_projection(z)[:, None, None, :].expand(z.shape[0], frames, joints, self.hidden_dim)
         x = x + _time_embedding(frames, self.hidden_dim, z.device, x.dtype)
-        x = x + _joint_embedding(joints, self.hidden_dim, z.device, x.dtype)
+        if self.use_joint_index_embedding:
+            x = x + _joint_embedding(joints, self.hidden_dim, z.device, x.dtype)
+        if topology_embedding is not None:
+            x = x + topology_embedding[:, None]
         x = _apply_token_mask(x, time_mask=time_mask, joint_mask=joint_mask)
         for block in self.decoder_blocks:
-            x = block(x, time_mask=time_mask, joint_mask=joint_mask)
+            x = block(x, time_mask=time_mask, joint_mask=joint_mask, parents=parents)
         x = self.decoder_norm(x)
         return self.output_projection(x)
+
+    def _topology_embedding(self, batch: Dict[str, Tensor], positions: Tensor, joint_mask: Tensor) -> Tensor | None:
+        if self.topology_projection is None:
+            return None
+        topology = _topology_features(batch=batch, positions=positions, joint_mask=joint_mask)
+        return self.topology_projection(topology)
 
     @staticmethod
     def reparameterize(mu: Tensor, logvar: Tensor) -> Tensor:
@@ -331,6 +410,79 @@ def _target_root_translation(batch: Dict[str, Tensor], positions: Tensor) -> Ten
     if root_translation is None:
         return positions[:, :, 0]
     return root_translation.to(device=positions.device, dtype=positions.dtype)
+
+
+def _topology_features(batch: Dict[str, Tensor], positions: Tensor, joint_mask: Tensor) -> Tensor:
+    batch_size, _, joints, _ = positions.shape
+    device = positions.device
+    dtype = positions.dtype
+    parents = _parents_or_default(batch.get("parents"), batch_size=batch_size, joints=joints, device=device)
+    rest_offsets = batch.get("rest_offsets")
+    if rest_offsets is None:
+        rest_offsets = torch.zeros((batch_size, joints, 3), device=device, dtype=dtype)
+    else:
+        rest_offsets = rest_offsets.to(device=device, dtype=dtype)
+        if rest_offsets.ndim == 2:
+            rest_offsets = rest_offsets[None].expand(batch_size, joints, 3)
+    bone_lengths = torch.linalg.norm(rest_offsets, dim=-1, keepdim=True)
+    depth = _normalized_parent_depth(parents=parents, joint_mask=joint_mask, dtype=dtype)
+    chain_coordinates = batch.get("chain_coordinates")
+    if chain_coordinates is None:
+        chain_coordinates = depth.squeeze(-1)
+    else:
+        chain_coordinates = chain_coordinates.to(device=device, dtype=dtype)
+        if chain_coordinates.ndim == 1:
+            chain_coordinates = chain_coordinates[None].expand(batch_size, joints)
+    root_flag = (parents < 0).to(device=device, dtype=dtype).unsqueeze(-1)
+    return torch.cat(
+        [
+            rest_offsets,
+            bone_lengths,
+            depth,
+            chain_coordinates.unsqueeze(-1),
+            root_flag,
+        ],
+        dim=-1,
+    )
+
+
+def _parents_or_default(
+    parents: Tensor | None,
+    batch_size: int,
+    joints: int,
+    device: torch.device,
+) -> Tensor:
+    if parents is None:
+        default = torch.arange(joints, device=device, dtype=torch.long) - 1
+        default[0] = -1
+        return default[None].expand(batch_size, joints)
+    parents = parents.to(device=device, dtype=torch.long)
+    if parents.ndim == 1:
+        parents = parents[None].expand(batch_size, joints)
+    return parents[:, :joints]
+
+
+def _normalized_parent_depth(parents: Tensor, joint_mask: Tensor, dtype: torch.dtype) -> Tensor:
+    parents_cpu = parents.detach().cpu().tolist()
+    joint_mask_cpu = joint_mask.detach().cpu().tolist()
+    depths: list[list[float]] = []
+    for batch_index, batch_parents in enumerate(parents_cpu):
+        batch_depths: list[float] = []
+        for joint_index, _ in enumerate(batch_parents):
+            if not joint_mask_cpu[batch_index][joint_index]:
+                batch_depths.append(0.0)
+                continue
+            depth = 0
+            parent = batch_parents[joint_index]
+            visited = {joint_index}
+            while parent >= 0 and parent < len(batch_parents) and parent not in visited:
+                depth += 1
+                visited.add(parent)
+                parent = batch_parents[parent]
+            batch_depths.append(float(depth))
+        max_depth = max(max(batch_depths), 1.0)
+        depths.append([value / max_depth for value in batch_depths])
+    return torch.tensor(depths, device=parents.device, dtype=dtype).unsqueeze(-1)
 
 
 def _masked_joint_mean(tokens: Tensor, joint_mask: Tensor) -> Tensor:

@@ -69,7 +69,7 @@ After converting AMASS into `datasets/AMASS_RigFlow4D/manifest.json`, train the 
 python train/rigflow4d_stage1_vae.py --device cuda
 ```
 
-The defaults are the recommended TG-VAE recipe: `datasets/AMASS_RigFlow4D`, `manifest.json`, `checkpoints/rigflow4d_stage1_tgvae`, 64-frame windows, 256-d latent, 4 layers, 8 heads, and the motion-consistency losses enabled. Stage 1 now trains the body pose in root-relative coordinates while predicting root translation separately, so the model cannot satisfy the loss by preserving only the first pose plus global displacement. For non-standard dataset locations, only pass the paths:
+The defaults are the recommended topology-conditioned TG-VAE recipe: `datasets/AMASS_RigFlow4D`, `manifest.json`, `checkpoints/rigflow4d_stage1_tgvae`, 64-frame windows, 256-d latent, 4 layers, 8 heads, topology tokens, parent-child graph mixing, and the motion-consistency losses enabled. Stage 1 trains the body pose in root-relative coordinates while predicting root translation separately, so the model cannot satisfy the loss by preserving only the first pose plus global displacement. For non-standard dataset locations, only pass the paths:
 
 ```bash
 python train/rigflow4d_stage1_vae.py \
@@ -78,7 +78,7 @@ python train/rigflow4d_stage1_vae.py \
   --device cuda
 ```
 
-The script writes `vae_latest.pt`, `vae_best.pt`, and `metrics.jsonl`. The main body-pose metric is `*_recon_position` in root-relative coordinates; `*_root_position`, `*_root_velocity`, and `*_absolute_position` are logged separately for diagnosis. Checkpoints trained before this root-relative Stage 1 change should be retrained from scratch. Resume interrupted training with:
+The script writes `vae_latest.pt`, `vae_best.pt`, and `metrics.jsonl`. The main body-pose metric is `*_recon_position` in root-relative coordinates; `*_root_position`, `*_root_velocity`, and `*_absolute_position` are logged separately for diagnosis. The model now conditions on `parents`, `rest_offsets`, and chain coordinates from each rig, while joint-index embedding is disabled by default; use `--use-joint-index-embedding`, `--no-topology-conditioning`, or `--no-graph-mixer` only for ablations. Checkpoints trained before this topology-conditioned Stage 1 change should be retrained from scratch. Resume interrupted training with:
 
 ```bash
 python train/rigflow4d_stage1_vae.py \

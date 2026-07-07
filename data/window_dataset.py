@@ -14,6 +14,9 @@ class MotionWindow:
     local_rotations_6d: np.ndarray
     root_translation: np.ndarray
     parents: np.ndarray
+    rest_offsets: np.ndarray
+    chain_ids: np.ndarray
+    chain_coordinates: np.ndarray
     time_mask: np.ndarray
     joint_mask: np.ndarray
     source_sample_index: int
@@ -79,6 +82,9 @@ class MotionWindowDataset:
             local_rotations_6d=rotations,
             root_translation=root_translation,
             parents=sample.rig.parents.astype(np.int64, copy=False),
+            rest_offsets=sample.rig.rest_offsets.astype(np.float32, copy=False),
+            chain_ids=sample.rig.chain_ids.astype(np.int64, copy=False),
+            chain_coordinates=sample.rig.chain_coordinates.astype(np.float32, copy=False),
             time_mask=time_mask,
             joint_mask=np.ones((joint_count,), dtype=bool),
             source_sample_index=sample_index,
@@ -113,6 +119,9 @@ def collate_motion_windows(items: Sequence[MotionWindow]) -> dict[str, np.ndarra
     rotations = np.zeros((batch_size, window_size, max_joints, 6), dtype=items[0].local_rotations_6d.dtype)
     root_translation = np.zeros((batch_size, window_size, 3), dtype=items[0].root_translation.dtype)
     parents = np.full((batch_size, max_joints), fill_value=-1, dtype=np.int64)
+    rest_offsets = np.zeros((batch_size, max_joints, 3), dtype=np.float32)
+    chain_ids = np.full((batch_size, max_joints), fill_value=-1, dtype=np.int64)
+    chain_coordinates = np.zeros((batch_size, max_joints), dtype=np.float32)
     time_mask = np.zeros((batch_size, window_size), dtype=bool)
     joint_mask = np.zeros((batch_size, max_joints), dtype=bool)
     source_sample_index = np.zeros((batch_size,), dtype=np.int64)
@@ -137,6 +146,9 @@ def collate_motion_windows(items: Sequence[MotionWindow]) -> dict[str, np.ndarra
         rotations[batch_index, :, :joints] = item.local_rotations_6d
         root_translation[batch_index] = item.root_translation
         parents[batch_index, :joints] = item.parents
+        rest_offsets[batch_index, :joints] = item.rest_offsets
+        chain_ids[batch_index, :joints] = item.chain_ids
+        chain_coordinates[batch_index, :joints] = item.chain_coordinates
         time_mask[batch_index] = item.time_mask
         joint_mask[batch_index, :joints] = item.joint_mask
         source_sample_index[batch_index] = item.source_sample_index
@@ -154,6 +166,9 @@ def collate_motion_windows(items: Sequence[MotionWindow]) -> dict[str, np.ndarra
         "local_rotations_6d": rotations,
         "root_translation": root_translation,
         "parents": parents,
+        "rest_offsets": rest_offsets,
+        "chain_ids": chain_ids,
+        "chain_coordinates": chain_coordinates,
         "time_mask": time_mask,
         "joint_mask": joint_mask,
         "source_sample_index": source_sample_index,
