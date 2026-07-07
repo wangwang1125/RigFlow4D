@@ -69,7 +69,7 @@ After converting AMASS into `datasets/AMASS_RigFlow4D/manifest.json`, train the 
 python train/rigflow4d_stage1_vae.py --device cuda
 ```
 
-The defaults are the recommended TG-VAE recipe: `datasets/AMASS_RigFlow4D`, `manifest.json`, `checkpoints/rigflow4d_stage1_tgvae`, 64-frame windows, 256-d latent, 4 layers, 8 heads, and the motion-consistency losses enabled. For non-standard dataset locations, only pass the paths:
+The defaults are the recommended TG-VAE recipe: `datasets/AMASS_RigFlow4D`, `manifest.json`, `checkpoints/rigflow4d_stage1_tgvae`, 64-frame windows, 256-d latent, 4 layers, 8 heads, and the motion-consistency losses enabled. Stage 1 now trains the body pose in root-relative coordinates while predicting root translation separately, so the model cannot satisfy the loss by preserving only the first pose plus global displacement. For non-standard dataset locations, only pass the paths:
 
 ```bash
 python train/rigflow4d_stage1_vae.py \
@@ -78,7 +78,7 @@ python train/rigflow4d_stage1_vae.py \
   --device cuda
 ```
 
-The script writes `vae_latest.pt`, `vae_best.pt`, and `metrics.jsonl`. Resume interrupted training with:
+The script writes `vae_latest.pt`, `vae_best.pt`, and `metrics.jsonl`. The main body-pose metric is `*_recon_position` in root-relative coordinates; `*_root_position`, `*_root_velocity`, and `*_absolute_position` are logged separately for diagnosis. Checkpoints trained before this root-relative Stage 1 change should be retrained from scratch. Resume interrupted training with:
 
 ```bash
 python train/rigflow4d_stage1_vae.py \
@@ -92,7 +92,7 @@ Visualize Stage 1 reconstruction:
 python inference/visualize_stage1_vae.py --device cuda
 ```
 
-By default this reads `checkpoints/rigflow4d_stage1_tgvae/vae_best.pt` and writes side-by-side `Input / GT` vs `Encoder + Decoder reconstruction` GIFs under `outputs/visualize_stage1_vae/`. Each GIF frame contains front, side, and top views in one image, with a short motion trail so movement is easier to inspect. The visualizer also defaults to `--selection motion`, which scores candidate windows by joint velocity instead of always picking the first static-looking clips. Use `--selection first`, `--sample-index`, `--trail-frames 0`, or larger `--width/--height` when you want a specific debug view.
+By default this reads `checkpoints/rigflow4d_stage1_tgvae/vae_best.pt` and writes side-by-side `Input / GT` vs `Encoder + Decoder reconstruction` GIFs under `outputs/visualize_stage1_vae/`. Each GIF frame contains front, side, and top views in one image, with a short motion trail so movement is easier to inspect. The visualizer also defaults to `--selection motion`, which scores candidate windows by joint velocity instead of always picking the first static-looking clips. The `.npz` and `metrics.json` outputs include root translation and root-relative reconstruction errors, which helps separate "root motion is right" from "body motion is right". Use `--selection first`, `--sample-index`, `--trail-frames 0`, or larger `--width/--height` when you want a specific debug view.
 
 ## Planning Document
 

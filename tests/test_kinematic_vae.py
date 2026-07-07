@@ -1,6 +1,6 @@
 import torch
 
-from models.rigflow4d.kinematic_vae import KinematicVAE, kinematic_vae_loss
+from models.rigflow4d.kinematic_vae import KinematicVAE, KinematicVAEOutput, kinematic_vae_loss
 
 
 def make_batch(batch_size=2, frames=4, joints=5):
@@ -29,6 +29,8 @@ def test_kinematic_vae_forward_shapes():
 
     assert output.positions.shape == batch["positions"].shape
     assert output.local_rotations_6d.shape == batch["local_rotations_6d"].shape
+    assert output.root_translation.shape == batch["root_translation"].shape
+    assert output.root_relative_positions.shape == batch["positions"].shape
     assert output.mu.shape == (2, 12)
     assert output.logvar.shape == (2, 12)
     assert output.z.shape == (2, 12)
@@ -100,6 +102,7 @@ def test_kinematic_vae_loss_is_finite_with_masks():
     assert torch.isfinite(losses["loss"])
     assert torch.isfinite(losses["recon_position"])
     assert torch.isfinite(losses["recon_rotation"])
+    assert torch.isfinite(losses["root_position"])
     assert torch.isfinite(losses["kl"])
     assert torch.isfinite(losses["velocity"])
     assert torch.isfinite(losses["acceleration"])
@@ -132,6 +135,7 @@ def test_kinematic_vae_loss_weights_motion_terms_into_total():
         losses["recon_position"]
         + losses["recon_rotation"]
         + 0.01 * losses["kl"]
+        + losses["root_position"]
         + 0.5 * losses["velocity"]
         + 0.25 * losses["acceleration"]
         + 0.125 * losses["bone_length"]
@@ -139,6 +143,51 @@ def test_kinematic_vae_loss_weights_motion_terms_into_total():
     )
 
     torch.testing.assert_close(losses["loss"], expected)
+
+
+def test_kinematic_vae_loss_separates_body_pose_from_global_root_shift():
+    rotations = torch.zeros(1, 3, 3, 6)
+    root = torch.tensor([[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0]]])
+    local_pose = torch.tensor(
+        [
+            [
+                [[0.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 2.0, 0.0]],
+                [[0.0, 0.0, 0.0], [0.1, 1.1, 0.0], [0.0, 2.1, 0.0]],
+                [[0.0, 0.0, 0.0], [0.2, 1.2, 0.0], [0.0, 2.2, 0.0]],
+            ]
+        ]
+    )
+    shifted_root = root + torch.tensor([[[10.0, 0.0, 0.0]]])
+    batch = {
+        "positions": root[:, :, None, :] + local_pose,
+        "local_rotations_6d": rotations,
+        "root_translation": root,
+        "time_mask": torch.ones(1, 3, dtype=torch.bool),
+        "joint_mask": torch.ones(1, 3, dtype=torch.bool),
+        "parents": torch.tensor([[-1, 0, 1]], dtype=torch.long),
+    }
+    output = KinematicVAEOutput(
+        positions=shifted_root[:, :, None, :] + local_pose,
+        root_translation=shifted_root,
+        root_relative_positions=local_pose,
+        local_rotations_6d=rotations,
+        mu=torch.zeros(1, 4),
+        logvar=torch.zeros(1, 4),
+        z=torch.zeros(1, 4),
+    )
+
+    losses = kinematic_vae_loss(
+        output,
+        batch,
+        beta=0.0,
+        velocity_weight=0.0,
+        acceleration_weight=0.0,
+        bone_length_weight=0.0,
+        root_velocity_weight=0.0,
+    )
+
+    torch.testing.assert_close(losses["recon_position"], torch.tensor(0.0))
+    assert losses["root_position"] > 0.0
 
 
 def test_kinematic_vae_training_step_updates_parameters():

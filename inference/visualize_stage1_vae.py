@@ -104,8 +104,10 @@ def run_stage1_vae_visualization(config: Stage1VisualizationConfig) -> Stage1Vis
         valid_frames = int(time_mask.sum())
         input_positions = batch["positions"][0, :valid_frames]
         input_rotations = batch["local_rotations_6d"][0, :valid_frames]
+        input_root_translation = batch["root_translation"][0, :valid_frames]
         recon_positions = output.positions[0, :valid_frames].detach().cpu().numpy()
         recon_rotations = output.local_rotations_6d[0, :valid_frames].detach().cpu().numpy()
+        recon_root_translation = output.root_translation[0, :valid_frames].detach().cpu().numpy()
         parents = batch["parents"][0, : input_positions.shape[1]].astype(np.int64)
 
         stem = f"sample_{sample_index:05d}_start_{int(batch['start'][0]):05d}"
@@ -125,6 +127,8 @@ def run_stage1_vae_visualization(config: Stage1VisualizationConfig) -> Stage1Vis
             reconstruction_path,
             input_positions=input_positions.astype(np.float32),
             reconstructed_positions=recon_positions.astype(np.float32),
+            input_root_translation=input_root_translation.astype(np.float32),
+            reconstructed_root_translation=recon_root_translation.astype(np.float32),
             input_local_rotations_6d=input_rotations.astype(np.float32),
             reconstructed_local_rotations_6d=recon_rotations.astype(np.float32),
             parents=parents,
@@ -135,6 +139,8 @@ def run_stage1_vae_visualization(config: Stage1VisualizationConfig) -> Stage1Vis
         metrics = compute_reconstruction_metrics(
             input_positions=input_positions,
             reconstructed_positions=recon_positions,
+            input_root_translation=input_root_translation,
+            reconstructed_root_translation=recon_root_translation,
             parents=parents,
         )
         metrics.update(
@@ -263,11 +269,20 @@ def compute_reconstruction_metrics(
     input_positions: np.ndarray,
     reconstructed_positions: np.ndarray,
     parents: np.ndarray,
+    input_root_translation: np.ndarray | None = None,
+    reconstructed_root_translation: np.ndarray | None = None,
 ) -> dict[str, float]:
+    input_root = input_positions[:, 0] if input_root_translation is None else input_root_translation
+    reconstructed_root = reconstructed_positions[:, 0] if reconstructed_root_translation is None else reconstructed_root_translation
     diff = reconstructed_positions - input_positions
+    relative_diff = (reconstructed_positions - reconstructed_root[:, None, :]) - (input_positions - input_root[:, None, :])
+    root_diff = reconstructed_root - input_root
     metrics = {
         "mpjpe": float(np.linalg.norm(diff, axis=-1).mean()),
+        "root_mpjpe": float(np.linalg.norm(root_diff, axis=-1).mean()),
+        "root_relative_mpjpe": float(np.linalg.norm(relative_diff, axis=-1).mean()),
         "position_mse": float(np.square(diff).mean()),
+        "root_relative_position_mse": float(np.square(relative_diff).mean()),
     }
     if input_positions.shape[0] > 1:
         metrics["velocity_mse"] = float(np.square(np.diff(reconstructed_positions, axis=0) - np.diff(input_positions, axis=0)).mean())

@@ -105,9 +105,13 @@ def test_stage1_vae_visualization_writes_reconstruction_artifacts(tmp_path):
     with np.load(result.reconstruction_paths[0]) as recon:
         assert recon["input_positions"].shape == (4, 4, 3)
         assert recon["reconstructed_positions"].shape == (4, 4, 3)
+        assert recon["input_root_translation"].shape == (4, 3)
+        assert recon["reconstructed_root_translation"].shape == (4, 3)
         assert recon["parents"].shape == (4,)
     metrics = json.loads(result.metrics_path.read_text(encoding="utf-8"))
     assert metrics["samples"][0]["mpjpe"] >= 0
+    assert metrics["samples"][0]["root_mpjpe"] >= 0
+    assert metrics["samples"][0]["root_relative_mpjpe"] >= 0
     assert metrics["view"] == "multi"
     assert metrics["views"] == ["front", "side", "top"]
 

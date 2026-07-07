@@ -38,6 +38,7 @@ class Stage1VAEConfig:
     num_heads: int = 8
     ffn_dim: int | None = 1024
     dropout: float = 0.1
+    root_position_weight: float = 1.0
     velocity_weight: float = 0.1
     acceleration_weight: float = 0.01
     bone_length_weight: float = 0.1
@@ -82,6 +83,7 @@ class Stage1VAEConfig:
         if self.beta < 0:
             raise ValueError("beta must be non-negative")
         for name, value in {
+            "root_position_weight": self.root_position_weight,
             "velocity_weight": self.velocity_weight,
             "acceleration_weight": self.acceleration_weight,
             "bone_length_weight": self.bone_length_weight,
@@ -113,6 +115,7 @@ class Stage1VAEConfig:
             "num_heads": self.num_heads,
             "ffn_dim": self.ffn_dim,
             "dropout": self.dropout,
+            "root_position_weight": self.root_position_weight,
             "velocity_weight": self.velocity_weight,
             "acceleration_weight": self.acceleration_weight,
             "bone_length_weight": self.bone_length_weight,
@@ -220,6 +223,7 @@ def train_stage1_vae_step(
     motion_batch: Mapping[str, Tensor],
     optimizer: torch.optim.Optimizer,
     beta: float,
+    root_position_weight: float,
     velocity_weight: float,
     acceleration_weight: float,
     bone_length_weight: float,
@@ -233,6 +237,7 @@ def train_stage1_vae_step(
         output,
         dict(motion_batch),
         beta=beta,
+        root_position_weight=root_position_weight,
         velocity_weight=velocity_weight,
         acceleration_weight=acceleration_weight,
         bone_length_weight=bone_length_weight,
@@ -251,6 +256,7 @@ def evaluate_stage1_vae(
     dataloader: DataLoader,
     device: torch.device,
     beta: float,
+    root_position_weight: float,
     velocity_weight: float,
     acceleration_weight: float,
     bone_length_weight: float,
@@ -266,6 +272,7 @@ def evaluate_stage1_vae(
             output,
             motion_batch,
             beta=beta,
+            root_position_weight=root_position_weight,
             velocity_weight=velocity_weight,
             acceleration_weight=acceleration_weight,
             bone_length_weight=bone_length_weight,
@@ -319,6 +326,7 @@ def run_stage1_vae_training(config: Stage1VAEConfig) -> Stage1VAEResult:
             motion_batch=motion_batch,
             optimizer=optimizer,
             beta=config.beta,
+            root_position_weight=config.root_position_weight,
             velocity_weight=config.velocity_weight,
             acceleration_weight=config.acceleration_weight,
             bone_length_weight=config.bone_length_weight,
@@ -335,6 +343,7 @@ def run_stage1_vae_training(config: Stage1VAEConfig) -> Stage1VAEResult:
                 dataloader=eval_loader,
                 device=device,
                 beta=config.beta,
+                root_position_weight=config.root_position_weight,
                 velocity_weight=config.velocity_weight,
                 acceleration_weight=config.acceleration_weight,
                 bone_length_weight=config.bone_length_weight,
@@ -445,6 +454,7 @@ def parse_args(argv: Optional[Iterable[str]] = None) -> Stage1VAEConfig:
     parser.add_argument("--num-heads", type=int, default=8)
     parser.add_argument("--ffn-dim", type=int, default=1024)
     parser.add_argument("--dropout", type=float, default=0.1)
+    parser.add_argument("--root-position-weight", type=float, default=1.0)
     parser.add_argument("--velocity-weight", type=float, default=0.1)
     parser.add_argument("--acceleration-weight", type=float, default=0.01)
     parser.add_argument("--bone-length-weight", type=float, default=0.1)
@@ -476,6 +486,7 @@ def parse_args(argv: Optional[Iterable[str]] = None) -> Stage1VAEConfig:
         num_heads=args.num_heads,
         ffn_dim=args.ffn_dim,
         dropout=args.dropout,
+        root_position_weight=args.root_position_weight,
         velocity_weight=args.velocity_weight,
         acceleration_weight=args.acceleration_weight,
         bone_length_weight=args.bone_length_weight,

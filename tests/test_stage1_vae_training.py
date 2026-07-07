@@ -138,6 +138,8 @@ def test_stage1_vae_parse_args_builds_formal_config(tmp_path):
             "64",
             "--dropout",
             "0.2",
+            "--root-position-weight",
+            "0.7",
             "--velocity-weight",
             "0.3",
             "--acceleration-weight",
@@ -162,6 +164,7 @@ def test_stage1_vae_parse_args_builds_formal_config(tmp_path):
     assert config.num_heads == 4
     assert config.ffn_dim == 64
     assert config.dropout == 0.2
+    assert config.root_position_weight == 0.7
     assert config.velocity_weight == 0.3
     assert config.acceleration_weight == 0.04
     assert config.bone_length_weight == 0.5
@@ -183,6 +186,7 @@ def test_stage1_vae_parse_args_uses_tgvae_defaults():
     assert config.num_layers == 4
     assert config.num_heads == 8
     assert config.ffn_dim == 1024
+    assert config.root_position_weight == 1.0
     assert config.velocity_weight == 0.1
     assert config.acceleration_weight == 0.01
     assert config.bone_length_weight == 0.1

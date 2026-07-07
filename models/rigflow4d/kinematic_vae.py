@@ -12,6 +12,8 @@ import torch.nn.functional as F
 @dataclass
 class KinematicVAEOutput:
     positions: Tensor
+    root_translation: Tensor
+    root_relative_positions: Tensor
     local_rotations_6d: Tensor
     mu: Tensor
     logvar: Tensor
@@ -102,7 +104,8 @@ class KinematicVAE(nn.Module):
         self.ffn_dim = ffn_dim
         self.dropout = dropout
 
-        self.input_projection = nn.Linear(feature_dim, hidden_dim)
+        motion_feature_dim = feature_dim + 3
+        self.input_projection = nn.Linear(motion_feature_dim, hidden_dim)
         self.encoder_blocks = nn.ModuleList(
             [
                 FactorizedTemporalSpatialBlock(
@@ -131,14 +134,19 @@ class KinematicVAE(nn.Module):
             ]
         )
         self.decoder_norm = nn.LayerNorm(hidden_dim)
-        self.output_projection = nn.Linear(hidden_dim, feature_dim)
+        self.output_projection = nn.Linear(hidden_dim, motion_feature_dim)
 
     def forward(self, batch: Dict[str, Tensor], sample_posterior: bool = True) -> KinematicVAEOutput:
         positions = batch["positions"]
         rotations = batch["local_rotations_6d"]
         time_mask = _mask_or_ones(batch.get("time_mask"), positions.shape[:2], positions.device)
         joint_mask = _mask_or_ones(batch.get("joint_mask"), (positions.shape[0], positions.shape[2]), positions.device)
-        features = torch.cat([positions, rotations], dim=-1)
+        root_translation = _target_root_translation(batch, positions)
+        root_origin = root_translation[:, :1]
+        root_delta = root_translation - root_origin
+        root_relative_positions = positions - root_translation[:, :, None, :]
+        root_delta_tokens = root_delta[:, :, None, :].expand(-1, -1, positions.shape[2], -1)
+        features = torch.cat([root_relative_positions, root_delta_tokens, rotations], dim=-1)
 
         x = self.input_projection(features)
         x = x + _time_embedding(positions.shape[1], self.hidden_dim, positions.device, x.dtype)
@@ -153,9 +161,15 @@ class KinematicVAE(nn.Module):
         z = self.reparameterize(mu, logvar) if sample_posterior else mu
 
         decoded = self._decode(z, frames=positions.shape[1], joints=positions.shape[2], time_mask=time_mask, joint_mask=joint_mask)
+        predicted_relative_positions = decoded[..., :3]
+        predicted_root_delta_tokens = decoded[..., 3:6]
+        predicted_root_delta = _masked_joint_mean(predicted_root_delta_tokens, joint_mask=joint_mask)
+        predicted_root_translation = root_origin + predicted_root_delta
         return KinematicVAEOutput(
-            positions=decoded[..., :3],
-            local_rotations_6d=decoded[..., 3:9],
+            positions=predicted_relative_positions + predicted_root_translation[:, :, None, :],
+            root_translation=predicted_root_translation,
+            root_relative_positions=predicted_relative_positions,
+            local_rotations_6d=decoded[..., 6:12],
             mu=mu,
             logvar=logvar,
             z=z,
@@ -188,6 +202,7 @@ def kinematic_vae_loss(
     output: KinematicVAEOutput,
     batch: Dict[str, Tensor],
     beta: float = 1e-3,
+    root_position_weight: float = 1.0,
     velocity_weight: float = 0.1,
     acceleration_weight: float = 0.01,
     bone_length_weight: float = 0.1,
@@ -197,16 +212,40 @@ def kinematic_vae_loss(
     rotations = batch["local_rotations_6d"]
     time_mask = _mask_or_ones(batch.get("time_mask"), positions.shape[:2], positions.device)
     joint_mask = _mask_or_ones(batch.get("joint_mask"), (positions.shape[0], positions.shape[2]), positions.device)
+    target_root_translation = _target_root_translation(batch, positions)
+    target_root_relative_positions = positions - target_root_translation[:, :, None, :]
 
-    recon_position = _masked_mse(output.positions, positions, _motion_mask(positions, time_mask, joint_mask))
+    recon_position = _masked_mse(
+        output.root_relative_positions,
+        target_root_relative_positions,
+        _motion_mask(positions, time_mask, joint_mask),
+    )
     recon_rotation = _masked_mse(
         output.local_rotations_6d,
         rotations,
         _motion_mask(rotations, time_mask, joint_mask),
     )
+    root_position = _root_position_loss(
+        prediction=output.root_translation,
+        target=target_root_translation,
+        time_mask=time_mask,
+    )
+    absolute_position = _masked_mse(output.positions, positions, _motion_mask(positions, time_mask, joint_mask))
     kl = -0.5 * torch.mean(1.0 + output.logvar - output.mu.pow(2) - output.logvar.exp())
-    velocity = _temporal_difference_loss(output.positions, positions, time_mask, joint_mask, order=1)
-    acceleration = _temporal_difference_loss(output.positions, positions, time_mask, joint_mask, order=2)
+    velocity = _temporal_difference_loss(
+        output.root_relative_positions,
+        target_root_relative_positions,
+        time_mask,
+        joint_mask,
+        order=1,
+    )
+    acceleration = _temporal_difference_loss(
+        output.root_relative_positions,
+        target_root_relative_positions,
+        time_mask,
+        joint_mask,
+        order=2,
+    )
     bone_length = _bone_length_loss(
         prediction=output.positions,
         target=positions,
@@ -216,8 +255,9 @@ def kinematic_vae_loss(
     )
     root_velocity = _root_velocity_loss(
         prediction=output.positions,
+        predicted_root_translation=output.root_translation,
         target_positions=positions,
-        target_root_translation=batch.get("root_translation"),
+        target_root_translation=target_root_translation,
         time_mask=time_mask,
     )
 
@@ -225,6 +265,7 @@ def kinematic_vae_loss(
         recon_position
         + recon_rotation
         + beta * kl
+        + root_position_weight * root_position
         + velocity_weight * velocity
         + acceleration_weight * acceleration
         + bone_length_weight * bone_length
@@ -234,6 +275,8 @@ def kinematic_vae_loss(
         "loss": loss,
         "recon_position": recon_position,
         "recon_rotation": recon_rotation,
+        "root_position": root_position,
+        "absolute_position": absolute_position,
         "kl": kl,
         "velocity": velocity,
         "acceleration": acceleration,
@@ -281,6 +324,24 @@ def _masked_mse(prediction: Tensor, target: Tensor, mask: Tensor) -> Tensor:
     expanded_mask = mask.expand_as(target)
     denom = expanded_mask.sum().clamp_min(1.0)
     return (squared * expanded_mask).sum() / denom
+
+
+def _target_root_translation(batch: Dict[str, Tensor], positions: Tensor) -> Tensor:
+    root_translation = batch.get("root_translation")
+    if root_translation is None:
+        return positions[:, :, 0]
+    return root_translation.to(device=positions.device, dtype=positions.dtype)
+
+
+def _masked_joint_mean(tokens: Tensor, joint_mask: Tensor) -> Tensor:
+    mask = joint_mask[:, None, :, None].to(device=tokens.device, dtype=tokens.dtype)
+    denom = mask.sum(dim=2).clamp_min(1.0)
+    return (tokens * mask).sum(dim=2) / denom
+
+
+def _root_position_loss(prediction: Tensor, target: Tensor, time_mask: Tensor) -> Tensor:
+    mask = time_mask[:, :, None].to(dtype=prediction.dtype, device=prediction.device)
+    return _masked_mse(prediction, target, mask)
 
 
 def _temporal_difference_loss(
@@ -338,13 +399,14 @@ def _bone_length_loss(
 
 def _root_velocity_loss(
     prediction: Tensor,
+    predicted_root_translation: Tensor | None,
     target_positions: Tensor,
     target_root_translation: Tensor | None,
     time_mask: Tensor,
 ) -> Tensor:
     if prediction.shape[1] <= 1:
         return prediction.new_zeros(())
-    pred_root = prediction[:, :, 0]
+    pred_root = predicted_root_translation if predicted_root_translation is not None else prediction[:, :, 0]
     target_root = target_root_translation.to(prediction.device, prediction.dtype) if target_root_translation is not None else target_positions[:, :, 0]
     pred_velocity = pred_root[:, 1:] - pred_root[:, :-1]
     target_velocity = target_root[:, 1:] - target_root[:, :-1]
