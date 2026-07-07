@@ -1,3 +1,6 @@
+import subprocess
+import sys
+
 import numpy as np
 import pytest
 
@@ -130,3 +133,15 @@ def test_parse_args_builds_converter_config(tmp_path):
     assert config.output_dir == tmp_path / "normalized"
     assert config.dataset_name == "aistpp"
     assert config.source_format == "aistpp"
+
+
+def test_raw_motion_capture_module_runs_without_preimport_warning():
+    result = subprocess.run(
+        [sys.executable, "-m", "preprocess.converters.raw_motion_capture", "--help"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    assert "RuntimeWarning" not in result.stderr
