@@ -27,6 +27,22 @@ def write_amass_like_npz(path, frames=3):
     np.savez(path, poses=poses, trans=trans, mocap_framerate=np.array(60.0))
 
 
+def write_amass_smplh_like_npz(path, frames=3):
+    poses = np.zeros((frames, 156), dtype=np.float32)
+    poses[:, 3:6] = np.array([0.0, 0.0, 0.1], dtype=np.float32)
+    poses[:, 66:69] = np.array([0.0, 0.2, 0.0], dtype=np.float32)
+    poses[:, 111:114] = np.array([0.0, -0.2, 0.0], dtype=np.float32)
+    trans = np.stack(
+        [
+            np.linspace(0.0, 0.2, frames),
+            np.zeros((frames,), dtype=np.float32),
+            np.ones((frames,), dtype=np.float32),
+        ],
+        axis=-1,
+    ).astype(np.float32)
+    np.savez(path, poses=poses, trans=trans, mocap_framerate=np.array(60.0))
+
+
 def write_aist_like_npz(path, frames=4):
     poses = np.zeros((frames, 24, 3), dtype=np.float32)
     poses[:, 1] = np.array([0.0, 0.2, 0.0], dtype=np.float32)
@@ -43,6 +59,41 @@ def write_broken_npz(path):
     path.write_bytes(b"this is not a zip npz file")
 
 
+def write_custom_skeleton_template(path):
+    path.write_text(
+        """
+{
+  "parents": [-1, 0, 1, 1, 3],
+  "rest_offsets": [
+    [0.0, 0.0, 0.0],
+    [0.0, 0.2, 0.0],
+    [-0.1, 0.1, 0.0],
+    [0.1, 0.1, 0.0],
+    [0.2, 0.0, 0.0]
+  ],
+  "joint_names": ["root", "spine", "left_tip", "right_shoulder", "right_tip"],
+  "chain_ids": [0, 1, 1, 3, 3],
+  "chain_coordinates": [0.0, 0.25, 0.5, 0.5, 1.0]
+}
+""".strip(),
+        encoding="utf-8",
+    )
+
+
+def write_custom_topology_npz(path, frames=2):
+    poses = np.zeros((frames, 5, 3), dtype=np.float32)
+    poses[:, 1] = np.array([0.0, 0.0, 0.1], dtype=np.float32)
+    trans = np.stack(
+        [
+            np.linspace(0.0, 0.1, frames),
+            np.linspace(0.2, 0.3, frames),
+            np.zeros((frames,), dtype=np.float32),
+        ],
+        axis=-1,
+    ).astype(np.float32)
+    np.savez(path, poses=poses, trans=trans)
+
+
 def test_parse_amass_like_npz_outputs_motion_contract(tmp_path):
     source = tmp_path / "amass_sample.npz"
     write_amass_like_npz(source)
@@ -56,6 +107,32 @@ def test_parse_amass_like_npz_outputs_motion_contract(tmp_path):
     np.testing.assert_allclose(parsed["positions"][:, 0], parsed["root_translation"])
 
 
+def test_parse_amass_smplh_like_npz_keeps_52_joint_hand_topology(tmp_path):
+    source = tmp_path / "amass_smplh_sample.npz"
+    write_amass_smplh_like_npz(source)
+
+    parsed = parse_raw_motion_capture_npz(source, source_format="amass")
+
+    assert parsed["local_axis_angle"].shape == (3, 52, 3)
+    assert parsed["positions"].shape == (3, 52, 3)
+    assert parsed["joint_names"].shape == (52,)
+    assert parsed["joint_names"][22] == "left_index1"
+    assert parsed["joint_names"][51] == "right_thumb3"
+    assert parsed["parents"][22] == 20
+    assert parsed["parents"][37] == 21
+    np.testing.assert_allclose(parsed["positions"][:, 0], parsed["root_translation"])
+
+
+def test_parse_smplh_source_format_uses_builtin_52_joint_template(tmp_path):
+    source = tmp_path / "smplh_sample.npz"
+    write_amass_smplh_like_npz(source)
+
+    parsed = parse_raw_motion_capture_npz(source, source_format="smplh")
+
+    assert parsed["local_axis_angle"].shape == (3, 52, 3)
+    assert parsed["rest_offsets"].shape == (52, 3)
+
+
 def test_parse_aist_like_npz_accepts_smpl_key_names(tmp_path):
     source = tmp_path / "aist_sample.npz"
     write_aist_like_npz(source)
@@ -64,6 +141,41 @@ def test_parse_aist_like_npz_accepts_smpl_key_names(tmp_path):
 
     assert parsed["local_axis_angle"].shape == (4, 24, 3)
     np.testing.assert_allclose(parsed["root_translation"][:, 1], np.linspace(0.0, 0.3, 4))
+
+
+def test_parse_raw_motion_capture_uses_skeleton_template_for_custom_topology(tmp_path):
+    source = tmp_path / "custom_sample.npz"
+    template = tmp_path / "custom_skeleton.json"
+    write_custom_topology_npz(source)
+    write_custom_skeleton_template(template)
+
+    parsed = parse_raw_motion_capture_npz(
+        source,
+        source_format="generic",
+        skeleton_template=template,
+    )
+
+    assert parsed["local_axis_angle"].shape == (2, 5, 3)
+    assert parsed["positions"].shape == (2, 5, 3)
+    np.testing.assert_array_equal(parsed["parents"], np.array([-1, 0, 1, 1, 3]))
+    np.testing.assert_allclose(parsed["rest_offsets"][4], np.array([0.2, 0.0, 0.0]))
+    assert parsed["joint_names"].tolist() == [
+        "root",
+        "spine",
+        "left_tip",
+        "right_shoulder",
+        "right_tip",
+    ]
+    np.testing.assert_allclose(parsed["positions"][:, 0], parsed["root_translation"])
+
+
+def test_parse_raw_motion_capture_requires_template_for_non_smpl_topology(tmp_path):
+    source = tmp_path / "smplx_like_sample.npz"
+    poses = np.zeros((2, 30, 3), dtype=np.float32)
+    np.savez(source, poses=poses)
+
+    with pytest.raises(ValueError, match="skeleton template"):
+        parse_raw_motion_capture_npz(source, source_format="smplx")
 
 
 def test_parse_raw_motion_capture_rejects_invalid_pose_shape(tmp_path):
@@ -122,6 +234,59 @@ def test_convert_raw_motion_capture_directory_writes_normalized_manifest(tmp_pat
     assert sample.positions.shape == (3, 24, 3)
     assert sample.local_rotations_6d.shape == (3, 24, 6)
     assert sample.root_translation.shape == (3, 3)
+
+
+def test_convert_raw_motion_capture_directory_preserves_amass_smplh_hand_joints(tmp_path):
+    raw_dir = tmp_path / "raw"
+    out_dir = tmp_path / "normalized"
+    raw_dir.mkdir()
+    write_amass_smplh_like_npz(raw_dir / "amass_smplh_sample.npz")
+
+    manifest_path = convert_raw_motion_capture_directory(
+        input_dir=raw_dir,
+        output_dir=out_dir,
+        dataset_name="amass",
+        source_format="amass",
+    )
+    adapter = NormalizedNpzAdapter(root=out_dir, manifest_path=manifest_path)
+    sample = adapter[0]
+
+    assert sample.positions.shape == (3, 52, 3)
+    assert sample.local_rotations_6d.shape == (3, 52, 6)
+    assert sample.rig.joint_names[22] == "left_index1"
+    assert sample.rig.joint_names[51] == "right_thumb3"
+
+
+def test_convert_raw_motion_capture_directory_preserves_custom_topology(tmp_path):
+    raw_dir = tmp_path / "raw"
+    out_dir = tmp_path / "normalized"
+    template = tmp_path / "custom_skeleton.json"
+    raw_dir.mkdir()
+    write_custom_topology_npz(raw_dir / "custom_sample.npz")
+    write_custom_skeleton_template(template)
+
+    manifest_path = convert_raw_motion_capture_directory(
+        input_dir=raw_dir,
+        output_dir=out_dir,
+        dataset_name="custom",
+        source_format="generic",
+        skeleton_template=template,
+    )
+    adapter = NormalizedNpzAdapter(root=out_dir, manifest_path=manifest_path)
+    sample = adapter[0]
+
+    assert len(adapter) == 1
+    assert sample.dataset_name == "custom"
+    assert sample.positions.shape == (2, 5, 3)
+    assert sample.local_rotations_6d.shape == (2, 5, 6)
+    assert sample.rig.joint_names == (
+        "root",
+        "spine",
+        "left_tip",
+        "right_shoulder",
+        "right_tip",
+    )
+    np.testing.assert_array_equal(sample.rig.parents, np.array([-1, 0, 1, 1, 3]))
 
 
 def test_convert_raw_motion_capture_directory_recurses_nested_amass_layout(tmp_path):
@@ -255,6 +420,26 @@ def test_parse_args_builds_converter_config(tmp_path):
     assert config.dataset_name == "aistpp"
     assert config.source_format == "aistpp"
     assert config.skip_invalid is False
+
+
+def test_parse_args_accepts_skeleton_template_for_generic_topology(tmp_path):
+    config = parse_args(
+        [
+            "--input-dir",
+            str(tmp_path / "raw"),
+            "--output-dir",
+            str(tmp_path / "normalized"),
+            "--dataset-name",
+            "smplx",
+            "--source-format",
+            "smplx",
+            "--skeleton-template",
+            str(tmp_path / "smplx_template.json"),
+        ]
+    )
+
+    assert config.source_format == "smplx"
+    assert config.skeleton_template == tmp_path / "smplx_template.json"
 
 
 def test_parse_args_accepts_skip_invalid(tmp_path):

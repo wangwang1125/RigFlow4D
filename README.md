@@ -61,6 +61,39 @@ RigFlow4D/
 
 Do not add extra `raw/amass/normalized/amass` nesting. The AMASS subset folders under `datasets/AMASS/` are the official dataset structure, not additional RigFlow4D layers.
 
+## Non-SMPL And Custom Skeleton Inputs
+
+RigFlow4D does not require the training skeleton to be SMPL. The normalized cache stores the real rig metadata for each sample: `parents`, `rest_offsets`, `joint_names`, `chain_ids`, and `chain_coordinates`. The Stage 1 TG-VAE batches different joint counts with padding and masks, and conditions the network on topology tokens plus parent-child graph mixing.
+
+There are two supported data paths:
+
+```bash
+# 1) Already parsed rig-native motion npz files.
+# Each file should contain positions, parents, rest_offsets, joint_names,
+# root_translation, and either local_rotations_6d or local_axis_angle.
+python -m preprocess.converters.motion_npz \
+  --input-dir datasets/YourRigNPZ \
+  --output-dir datasets/YourRig_RigFlow4D \
+  --dataset-name yourrig
+```
+
+```bash
+# 2) Raw pose-parameter npz files with an explicit skeleton template.
+# Use this for SMPL-X, SMPL-H, Mixamo, UE/MetaHuman, or custom rigs when the
+# source file has per-joint axis-angle poses but the topology is not SMPL24.
+python -m preprocess.converters.raw_motion_capture \
+  --input-dir datasets/YourRawMotions \
+  --output-dir datasets/YourRig_RigFlow4D \
+  --dataset-name yourrig \
+  --source-format generic \
+  --skeleton-template assets/skeleton_templates/your_rig_template.json \
+  --skip-invalid
+```
+
+`--source-format amass` keeps the current dependency-free bootstrap behavior, but it no longer blindly truncates every sequence to 24 joints. If an AMASS file stores the common 156-D SMPL-H pose vector, the converter uses the built-in 52-joint SMPL-H topology, including both hands. If the file only stores 24 body joints, it falls back to SMPL24. `--source-format aistpp` keeps the 24-joint AIST++ path. For `generic` or `smplx`, a skeleton template is required so the converter does not silently truncate back to a hidden standard skeleton. See `assets/skeleton_templates/README.md` for the template schema.
+
+For high-fidelity SMPL-X/SMPL-H supervision, prefer exporting joints, rotations, and topology from the official body model into the rig-native normalized `.npz` contract first. The lightweight template path is intentionally dependency-free, so it can run on cloud machines without installing body-model packages or storing restricted model files in the repository.
+
 ## Stage 1 Training
 
 After converting AMASS into `datasets/AMASS_RigFlow4D/manifest.json`, train the motion-only Temporal-Graph Kinematic VAE:
