@@ -1,5 +1,6 @@
 import json
 import math
+from pathlib import Path
 import subprocess
 import sys
 
@@ -166,6 +167,27 @@ def test_stage1_vae_parse_args_builds_formal_config(tmp_path):
     assert config.bone_length_weight == 0.5
     assert config.root_velocity_weight == 0.06
     assert config.device == "cpu"
+
+
+def test_stage1_vae_parse_args_uses_tgvae_defaults():
+    config = parse_args([])
+
+    assert config.data_root == Path("datasets/AMASS_RigFlow4D")
+    assert config.manifest_path == Path("manifest.json")
+    assert config.output_dir == Path("checkpoints/rigflow4d_stage1_tgvae")
+    assert config.window_size == 64
+    assert config.stride == 32
+    assert config.batch_size == 16
+    assert config.latent_dim == 256
+    assert config.hidden_dim == 256
+    assert config.num_layers == 4
+    assert config.num_heads == 8
+    assert config.ffn_dim == 1024
+    assert config.velocity_weight == 0.1
+    assert config.acceleration_weight == 0.01
+    assert config.bone_length_weight == 0.1
+    assert config.root_velocity_weight == 0.05
+    assert config.device == "auto"
 
 
 def test_stage1_vae_script_help_runs_from_file_path():

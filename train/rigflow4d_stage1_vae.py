@@ -23,20 +23,20 @@ from models.rigflow4d import KinematicVAE, kinematic_vae_loss
 
 @dataclass(frozen=True)
 class Stage1VAEConfig:
-    data_root: str | Path
-    manifest_path: str | Path
-    output_dir: str | Path = Path("checkpoints/rigflow4d_stage1_vae")
-    window_size: int = 32
-    stride: int = 16
-    batch_size: int = 32
+    data_root: str | Path = Path("datasets/AMASS_RigFlow4D")
+    manifest_path: str | Path = Path("manifest.json")
+    output_dir: str | Path = Path("checkpoints/rigflow4d_stage1_tgvae")
+    window_size: int = 64
+    stride: int = 32
+    batch_size: int = 16
     max_steps: int = 100000
     lr: float = 1e-4
     beta: float = 1e-3
-    latent_dim: int = 128
+    latent_dim: int = 256
     hidden_dim: int = 256
     num_layers: int = 4
     num_heads: int = 8
-    ffn_dim: int | None = None
+    ffn_dim: int | None = 1024
     dropout: float = 0.1
     velocity_weight: float = 0.1
     acceleration_weight: float = 0.01
@@ -430,20 +430,20 @@ def load_stage1_vae_checkpoint(
 
 def parse_args(argv: Optional[Iterable[str]] = None) -> Stage1VAEConfig:
     parser = argparse.ArgumentParser(description="RigFlow4D Stage 1 kinematic VAE training")
-    parser.add_argument("--data-root", required=True, type=Path)
-    parser.add_argument("--manifest", required=True, type=Path, dest="manifest_path")
-    parser.add_argument("--output-dir", type=Path, default=Path("checkpoints/rigflow4d_stage1_vae"))
-    parser.add_argument("--window-size", type=int, default=32)
-    parser.add_argument("--stride", type=int, default=16)
-    parser.add_argument("--batch-size", type=int, default=32)
+    parser.add_argument("--data-root", type=Path, default=Path("datasets/AMASS_RigFlow4D"))
+    parser.add_argument("--manifest", type=Path, default=Path("manifest.json"), dest="manifest_path")
+    parser.add_argument("--output-dir", type=Path, default=Path("checkpoints/rigflow4d_stage1_tgvae"))
+    parser.add_argument("--window-size", type=int, default=64)
+    parser.add_argument("--stride", type=int, default=32)
+    parser.add_argument("--batch-size", type=int, default=16)
     parser.add_argument("--max-steps", type=int, default=100000)
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--beta", type=float, default=1e-3)
-    parser.add_argument("--latent-dim", type=int, default=128)
+    parser.add_argument("--latent-dim", type=int, default=256)
     parser.add_argument("--hidden-dim", type=int, default=256)
     parser.add_argument("--num-layers", type=int, default=4)
     parser.add_argument("--num-heads", type=int, default=8)
-    parser.add_argument("--ffn-dim", type=int)
+    parser.add_argument("--ffn-dim", type=int, default=1024)
     parser.add_argument("--dropout", type=float, default=0.1)
     parser.add_argument("--velocity-weight", type=float, default=0.1)
     parser.add_argument("--acceleration-weight", type=float, default=0.01)

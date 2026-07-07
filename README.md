@@ -66,35 +66,22 @@ Do not add extra `raw/amass/normalized/amass` nesting. The AMASS subset folders 
 After converting AMASS into `datasets/AMASS_RigFlow4D/manifest.json`, train the motion-only Temporal-Graph Kinematic VAE:
 
 ```bash
+python train/rigflow4d_stage1_vae.py --device cuda
+```
+
+The defaults are the recommended TG-VAE recipe: `datasets/AMASS_RigFlow4D`, `manifest.json`, `checkpoints/rigflow4d_stage1_tgvae`, 64-frame windows, 256-d latent, 4 layers, 8 heads, and the motion-consistency losses enabled. For non-standard dataset locations, only pass the paths:
+
+```bash
 python train/rigflow4d_stage1_vae.py \
-  --data-root datasets/AMASS_RigFlow4D \
-  --manifest datasets/AMASS_RigFlow4D/manifest.json \
-  --output-dir checkpoints/rigflow4d_stage1_tgvae \
-  --window-size 64 \
-  --stride 32 \
-  --batch-size 16 \
-  --max-steps 100000 \
-  --lr 1e-4 \
-  --latent-dim 256 \
-  --hidden-dim 256 \
-  --num-layers 4 \
-  --num-heads 8 \
-  --ffn-dim 1024 \
-  --velocity-weight 0.1 \
-  --acceleration-weight 0.01 \
-  --bone-length-weight 0.1 \
-  --root-velocity-weight 0.05 \
-  --device cuda \
-  --num-workers 4
+  --data-root /path/to/AMASS_RigFlow4D \
+  --manifest manifest.json \
+  --device cuda
 ```
 
 The script writes `vae_latest.pt`, `vae_best.pt`, and `metrics.jsonl`. Resume interrupted training with:
 
 ```bash
 python train/rigflow4d_stage1_vae.py \
-  --data-root datasets/AMASS_RigFlow4D \
-  --manifest datasets/AMASS_RigFlow4D/manifest.json \
-  --output-dir checkpoints/rigflow4d_stage1_tgvae \
   --resume-from checkpoints/rigflow4d_stage1_tgvae/vae_latest.pt \
   --device cuda
 ```
