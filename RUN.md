@@ -181,6 +181,19 @@ This parser does not require SMPL or SMPL-X model assets. It uses the first 24 b
 
 The input directory is scanned recursively, so AMASS archives can be extracted with their original nested structure, for example `datasets/AMASS/ACCAD/s007/*.npz`. Output sample names preserve the relative path with `__` separators to avoid collisions.
 
+If the converter finds a `.npz` without the expected pose keys, the error reports the exact file path and available keys. After confirming the file is unrelated metadata or a mixed-in non-motion cache, rerun with `--skip-invalid`:
+
+```bash
+python -m preprocess.converters.raw_motion_capture \
+  --input-dir datasets/AMASS \
+  --output-dir datasets/AMASS_RigFlow4D \
+  --dataset-name amass \
+  --source-format amass \
+  --skip-invalid
+```
+
+Each conversion clears its generated `_parsed_motion/*.npz` cache before rebuilding, so reruns do not keep stale intermediate samples from earlier failed attempts.
+
 ## Motion Window Batching
 
 Training code should wrap sequence adapters with `data.MotionWindowDataset` before building motion priors or VAE/flow batches:

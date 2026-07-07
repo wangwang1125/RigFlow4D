@@ -34,6 +34,10 @@ def write_aist_like_npz(path, frames=4):
     np.savez(path, smpl_poses=poses, smpl_trans=trans)
 
 
+def write_non_motion_npz(path):
+    np.savez(path, metadata=np.array("not a motion file"), fps=np.array(30))
+
+
 def test_parse_amass_like_npz_outputs_motion_contract(tmp_path):
     source = tmp_path / "amass_sample.npz"
     write_amass_like_npz(source)
@@ -67,6 +71,19 @@ def test_parse_raw_motion_capture_rejects_invalid_pose_shape(tmp_path):
 
     with pytest.raises(ValueError, match="pose"):
         parse_raw_motion_capture_npz(source)
+
+
+def test_parse_raw_motion_capture_reports_file_and_keys_for_non_motion_npz(tmp_path):
+    source = tmp_path / "not_motion.npz"
+    write_non_motion_npz(source)
+
+    with pytest.raises(ValueError) as exc_info:
+        parse_raw_motion_capture_npz(source, source_format="amass")
+
+    message = str(exc_info.value)
+    assert "not_motion.npz" in message
+    assert "metadata" in message
+    assert "fps" in message
 
 
 def test_convert_raw_motion_capture_directory_writes_normalized_manifest(tmp_path):
@@ -115,6 +132,52 @@ def test_convert_raw_motion_capture_directory_recurses_nested_amass_layout(tmp_p
     ]
 
 
+def test_convert_raw_motion_capture_directory_can_skip_invalid_npz(tmp_path):
+    raw_dir = tmp_path / "raw"
+    out_dir = tmp_path / "normalized"
+    raw_dir.mkdir()
+    write_amass_like_npz(raw_dir / "valid_motion.npz")
+    write_non_motion_npz(raw_dir / "not_motion.npz")
+
+    with pytest.warns(RuntimeWarning, match="Skipping invalid raw motion npz"):
+        manifest_path = convert_raw_motion_capture_directory(
+            input_dir=raw_dir,
+            output_dir=out_dir,
+            dataset_name="amass",
+            source_format="amass",
+            skip_invalid=True,
+        )
+    adapter = NormalizedNpzAdapter(root=out_dir, manifest_path=manifest_path)
+
+    assert len(adapter) == 1
+    assert adapter.samples[0]["path"] == "valid_motion.npz"
+
+
+def test_convert_raw_motion_capture_directory_clears_stale_parsed_cache(tmp_path):
+    raw_dir = tmp_path / "raw"
+    out_dir = tmp_path / "normalized"
+    raw_dir.mkdir()
+    write_amass_like_npz(raw_dir / "first.npz")
+    write_amass_like_npz(raw_dir / "second.npz")
+
+    convert_raw_motion_capture_directory(
+        input_dir=raw_dir,
+        output_dir=out_dir,
+        dataset_name="amass",
+        source_format="amass",
+    )
+    (raw_dir / "second.npz").unlink()
+    manifest_path = convert_raw_motion_capture_directory(
+        input_dir=raw_dir,
+        output_dir=out_dir,
+        dataset_name="amass",
+        source_format="amass",
+    )
+
+    adapter = NormalizedNpzAdapter(root=out_dir, manifest_path=manifest_path)
+    assert [record["path"] for record in adapter.samples] == ["first.npz"]
+
+
 def test_parse_args_builds_converter_config(tmp_path):
     config = parse_args(
         [
@@ -133,6 +196,23 @@ def test_parse_args_builds_converter_config(tmp_path):
     assert config.output_dir == tmp_path / "normalized"
     assert config.dataset_name == "aistpp"
     assert config.source_format == "aistpp"
+    assert config.skip_invalid is False
+
+
+def test_parse_args_accepts_skip_invalid(tmp_path):
+    config = parse_args(
+        [
+            "--input-dir",
+            str(tmp_path / "raw"),
+            "--output-dir",
+            str(tmp_path / "normalized"),
+            "--dataset-name",
+            "amass",
+            "--skip-invalid",
+        ]
+    )
+
+    assert config.skip_invalid is True
 
 
 def test_raw_motion_capture_module_runs_without_preimport_warning():

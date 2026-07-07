@@ -4,6 +4,7 @@ import argparse
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Mapping, Optional
+import warnings
 
 import numpy as np
 
@@ -79,6 +80,7 @@ class RawMotionCaptureConfig:
     output_dir: Path
     dataset_name: str
     source_format: str = "auto"
+    skip_invalid: bool = False
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "input_dir", Path(self.input_dir))
@@ -97,8 +99,14 @@ def parse_raw_motion_capture_npz(
     if source_format not in {"auto", "amass", "aistpp"}:
         raise ValueError("source_format must be one of: auto, amass, aistpp")
     with np.load(path, allow_pickle=False) as src:
-        local_axis_angle = _read_local_axis_angle(src, source_format)
-        root_translation = _read_root_translation(src, local_axis_angle.shape[0], source_format)
+        try:
+            local_axis_angle = _read_local_axis_angle(src, source_format)
+            root_translation = _read_root_translation(src, local_axis_angle.shape[0], source_format)
+        except ValueError as exc:
+            raise ValueError(
+                f"failed to parse raw motion npz '{path}': {exc}; "
+                f"available keys: {_format_npz_keys(src)}"
+            ) from exc
 
     joint_count = local_axis_angle.shape[1]
     parents = SMPL24_PARENTS[:joint_count].copy()
@@ -126,16 +134,33 @@ def convert_raw_motion_capture_directory(
     output_dir: str | Path,
     dataset_name: str,
     source_format: str = "auto",
+    skip_invalid: bool = False,
 ) -> Path:
     input_path = Path(input_dir)
     output_path = Path(output_dir)
     parsed_path = output_path / "_parsed_motion"
     parsed_path.mkdir(parents=True, exist_ok=True)
+    _clear_generated_npz_cache(parsed_path)
 
+    parsed_count = 0
     for source_file in sorted(input_path.rglob("*.npz")):
-        parsed = parse_raw_motion_capture_npz(source_file, source_format=source_format)
+        try:
+            parsed = parse_raw_motion_capture_npz(source_file, source_format=source_format)
+        except ValueError as exc:
+            if not skip_invalid:
+                raise
+            warnings.warn(
+                f"Skipping invalid raw motion npz '{source_file}': {exc}",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            continue
         relative_name = _safe_relative_npz_name(source_file.relative_to(input_path))
         np.savez(parsed_path / relative_name, **parsed)
+        parsed_count += 1
+
+    if parsed_count == 0:
+        raise ValueError(f"no valid raw motion npz files found under '{input_path}'")
 
     return convert_motion_npz_directory(
         input_dir=parsed_path,
@@ -214,12 +239,14 @@ def parse_args(argv: Optional[Iterable[str]] = None) -> RawMotionCaptureConfig:
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--dataset-name", required=True)
     parser.add_argument("--source-format", choices=["auto", "amass", "aistpp"], default="auto")
+    parser.add_argument("--skip-invalid", action="store_true")
     args = parser.parse_args(list(argv) if argv is not None else None)
     return RawMotionCaptureConfig(
         input_dir=args.input_dir,
         output_dir=args.output_dir,
         dataset_name=args.dataset_name,
         source_format=args.source_format,
+        skip_invalid=args.skip_invalid,
     )
 
 
@@ -230,6 +257,7 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
         output_dir=config.output_dir,
         dataset_name=config.dataset_name,
         source_format=config.source_format,
+        skip_invalid=config.skip_invalid,
     )
     print(manifest_path)
     return 0
@@ -270,6 +298,16 @@ def _select_pose_key(src: Mapping[str, np.ndarray], source_format: str) -> str:
         if key in src:
             return key
     raise ValueError(f"raw motion npz is missing pose keys for source_format={source_format}")
+
+
+def _format_npz_keys(src: Mapping[str, np.ndarray]) -> str:
+    keys = list(src.keys())
+    return ", ".join(keys) if keys else "<none>"
+
+
+def _clear_generated_npz_cache(parsed_path: Path) -> None:
+    for stale_file in parsed_path.glob("*.npz"):
+        stale_file.unlink()
 
 
 def _pose_keys(source_format: str) -> tuple[str, ...]:
