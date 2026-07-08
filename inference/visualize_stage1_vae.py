@@ -17,7 +17,12 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from data.adapters.normalized_npz import NormalizedNpzAdapter
 from data.window_dataset import MotionWindowDataset, collate_motion_windows
-from train.rigflow4d_stage1_vae import Stage1VAEConfig, build_stage1_vae, motion_batch_to_torch
+from train.rigflow4d_stage1_vae import (
+    Stage1VAEConfig,
+    build_stage1_vae,
+    motion_batch_to_torch,
+    split_dataset_indices,
+)
 
 
 @dataclass(frozen=True)
@@ -34,6 +39,7 @@ class Stage1VisualizationConfig:
     width: int = 480
     height: int = 360
     view: str = "multi"
+    split: str = "val"
     selection: str = "motion"
     candidate_windows: int = 512
     trail_frames: int = 12
@@ -56,6 +62,8 @@ class Stage1VisualizationConfig:
             raise ValueError("width and height must be positive")
         if self.view not in {"multi", "front", "side", "top"}:
             raise ValueError("view must be one of: multi, front, side, top")
+        if self.split not in {"val", "train", "all"}:
+            raise ValueError("split must be one of: val, train, all")
         if self.selection not in {"motion", "first"}:
             raise ValueError("selection must be one of: motion, first")
         if self.candidate_windows <= 0:
@@ -82,18 +90,27 @@ def run_stage1_vae_visualization(config: Stage1VisualizationConfig) -> Stage1Vis
     dataset = MotionWindowDataset(adapter=adapter, window_size=window_size, stride=stride)
     if len(dataset) == 0:
         raise ValueError("motion dataset produced no windows")
+    split_indices, split_summary = _split_indices_for_visualization(
+        config=config,
+        dataset_len=len(dataset),
+        model_config=model_config,
+    )
 
     model = build_stage1_vae(model_config).to(device)
     model.load_state_dict(checkpoint["model_state"])
     model.eval()
 
     config.output_dir.mkdir(parents=True, exist_ok=True)
-    selected_samples = _select_sample_indices(config, dataset=dataset)
+    selected_samples = _select_sample_indices(
+        config,
+        dataset=dataset,
+        split_indices=split_indices,
+    )
     gif_paths: list[Path] = []
     reconstruction_paths: list[Path] = []
     sample_metrics: list[dict[str, object]] = []
 
-    for sample_index, selection_score in selected_samples:
+    for sample_index, selection_score, selected_split in selected_samples:
         window = dataset[sample_index]
         batch = collate_motion_windows([window])
         motion_batch = motion_batch_to_torch(batch, device=device)
@@ -109,6 +126,9 @@ def run_stage1_vae_visualization(config: Stage1VisualizationConfig) -> Stage1Vis
         recon_rotations = output.local_rotations_6d[0, :valid_frames].detach().cpu().numpy()
         recon_root_translation = output.root_translation[0, :valid_frames].detach().cpu().numpy()
         parents = batch["parents"][0, : input_positions.shape[1]].astype(np.int64)
+        source_sample = adapter[int(batch["source_sample_index"][0])]
+        joint_names = np.asarray(source_sample.rig.joint_names[: input_positions.shape[1]])
+        joint_count = int(input_positions.shape[1])
 
         stem = f"sample_{sample_index:05d}_start_{int(batch['start'][0]):05d}"
         gif_path = config.output_dir / f"{stem}_gt_vs_recon.gif"
@@ -132,6 +152,8 @@ def run_stage1_vae_visualization(config: Stage1VisualizationConfig) -> Stage1Vis
             input_local_rotations_6d=input_rotations.astype(np.float32),
             reconstructed_local_rotations_6d=recon_rotations.astype(np.float32),
             parents=parents,
+            joint_count=np.array(joint_count, dtype=np.int64),
+            joint_names=joint_names,
             source_sample_index=np.array(int(batch["source_sample_index"][0]), dtype=np.int64),
             start=np.array(int(batch["start"][0]), dtype=np.int64),
         )
@@ -151,6 +173,9 @@ def run_stage1_vae_visualization(config: Stage1VisualizationConfig) -> Stage1Vis
                 "gif": gif_path.name,
                 "reconstruction": reconstruction_path.name,
                 "selection_score": float(selection_score),
+                "split": selected_split,
+                "joint_count": joint_count,
+                "joint_names_head": [str(name) for name in joint_names[: min(joint_count, 12)]],
             }
         )
         sample_metrics.append(metrics)
@@ -166,6 +191,10 @@ def run_stage1_vae_visualization(config: Stage1VisualizationConfig) -> Stage1Vis
                 "manifest": str(config.manifest_path),
                 "window_size": window_size,
                 "stride": stride,
+                "split": "explicit" if config.sample_indices is not None else config.split,
+                "total_window_count": len(dataset),
+                "split_window_count": len(split_indices),
+                **split_summary,
                 "selection": "explicit" if config.sample_indices is not None else config.selection,
                 "candidate_windows": config.candidate_windows,
                 "trail_frames": config.trail_frames,
@@ -312,6 +341,7 @@ def parse_args(argv: Optional[Iterable[str]] = None) -> Stage1VisualizationConfi
     parser.add_argument("--width", type=int, default=480)
     parser.add_argument("--height", type=int, default=360)
     parser.add_argument("--view", choices=("multi", "front", "side", "top"), default="multi")
+    parser.add_argument("--split", choices=("val", "train", "all"), default="val")
     parser.add_argument("--selection", choices=("motion", "first"), default="motion")
     parser.add_argument("--candidate-windows", type=int, default=512)
     parser.add_argument("--trail-frames", type=int, default=12)
@@ -330,6 +360,7 @@ def parse_args(argv: Optional[Iterable[str]] = None) -> Stage1VisualizationConfi
         width=args.width,
         height=args.height,
         view=args.view,
+        split=args.split,
         selection=args.selection,
         candidate_windows=args.candidate_windows,
         trail_frames=args.trail_frames,
@@ -352,19 +383,57 @@ def _checkpoint_stage1_config(checkpoint: dict[str, object]) -> Stage1VAEConfig:
     return Stage1VAEConfig(**raw_config)
 
 
-def _select_sample_indices(config: Stage1VisualizationConfig, dataset: MotionWindowDataset) -> list[tuple[int, float]]:
+def _split_indices_for_visualization(
+    config: Stage1VisualizationConfig,
+    dataset_len: int,
+    model_config: Stage1VAEConfig,
+) -> tuple[list[int], dict[str, int]]:
+    train_indices, val_indices = split_dataset_indices(
+        dataset_len=dataset_len,
+        val_fraction=model_config.val_fraction,
+        seed=model_config.seed,
+    )
+    if config.split == "train":
+        split_indices = train_indices
+    elif config.split == "val":
+        split_indices = val_indices
+    else:
+        split_indices = list(range(dataset_len))
+    if config.sample_indices is None and not split_indices:
+        raise ValueError(
+            f"{config.split} split produced no windows; use --split train or --split all"
+        )
+    return split_indices, {
+        "train_window_count": len(train_indices),
+        "val_window_count": len(val_indices),
+    }
+
+
+def _select_sample_indices(
+    config: Stage1VisualizationConfig,
+    dataset: MotionWindowDataset,
+    split_indices: list[int],
+) -> list[tuple[int, float, str]]:
     dataset_len = len(dataset)
     if config.sample_indices is not None:
-        indices = [(index, _motion_score(dataset[index])) for index in config.sample_indices]
+        indices = [
+            (index, _motion_score(dataset[index]), "explicit")
+            for index in config.sample_indices
+        ]
     elif config.selection == "first":
-        indices = [(index, _motion_score(dataset[index])) for index in range(min(config.num_samples, dataset_len))]
+        indices = [
+            (index, _motion_score(dataset[index]), config.split)
+            for index in split_indices[: min(config.num_samples, len(split_indices))]
+        ]
     else:
         indices = _select_motionful_sample_indices(
             dataset=dataset,
             num_samples=config.num_samples,
             candidate_windows=config.candidate_windows,
+            candidate_indices=split_indices,
+            split_name=config.split,
         )
-    for index, _ in indices:
+    for index, _, _ in indices:
         if index < 0 or index >= dataset_len:
             raise IndexError(f"sample index {index} is out of range for {dataset_len} windows")
     return indices
@@ -374,12 +443,17 @@ def _select_motionful_sample_indices(
     dataset: MotionWindowDataset,
     num_samples: int,
     candidate_windows: int,
-) -> list[tuple[int, float]]:
-    candidate_count = min(len(dataset), max(num_samples, candidate_windows))
+    candidate_indices: list[int],
+    split_name: str,
+) -> list[tuple[int, float, str]]:
+    candidate_count = min(len(candidate_indices), max(num_samples, candidate_windows))
     if candidate_count <= 0:
         return []
-    candidate_indices = np.linspace(0, len(dataset) - 1, candidate_count, dtype=np.int64)
-    scored = [(int(index), _motion_score(dataset[int(index)])) for index in np.unique(candidate_indices)]
+    candidate_positions = np.linspace(0, len(candidate_indices) - 1, candidate_count, dtype=np.int64)
+    scored = [
+        (int(candidate_indices[int(position)]), _motion_score(dataset[int(candidate_indices[int(position)])]), split_name)
+        for position in np.unique(candidate_positions)
+    ]
     scored.sort(key=lambda item: (-item[1], item[0]))
     return scored[:num_samples]
 

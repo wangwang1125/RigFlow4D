@@ -7,7 +7,12 @@ from PIL import Image
 import torch
 
 from inference.visualize_stage1_vae import Stage1VisualizationConfig, parse_args, run_stage1_vae_visualization
-from train.rigflow4d_stage1_vae import Stage1VAEConfig, build_stage1_vae, save_stage1_vae_checkpoint
+from train.rigflow4d_stage1_vae import (
+    Stage1VAEConfig,
+    build_stage1_vae,
+    save_stage1_vae_checkpoint,
+    split_dataset_indices,
+)
 
 
 def write_normalized_dataset(tmp_path, frames=10, joints=4, positions=None):
@@ -19,13 +24,15 @@ def write_normalized_dataset(tmp_path, frames=10, joints=4, positions=None):
     else:
         positions = np.asarray(positions, dtype=np.float32)
         frames, joints = positions.shape[:2]
+    parents = np.arange(joints, dtype=np.int64) - 1
+    parents[0] = -1
     np.savez(
         sample_path,
         dataset_name=np.array("unit"),
         input_type=np.array("video"),
         source_label_type=np.array("motion_only"),
         camera_mode=np.array("unknown"),
-        parents=np.array([-1, 0, 1, 2], dtype=np.int64)[:joints],
+        parents=parents,
         rest_offsets=np.zeros((joints, 3), dtype=np.float32),
         joint_names=np.array([f"joint_{i}" for i in range(joints)]),
         chain_ids=np.arange(joints, dtype=np.int64),
@@ -108,20 +115,100 @@ def test_stage1_vae_visualization_writes_reconstruction_artifacts(tmp_path):
         assert recon["input_root_translation"].shape == (4, 3)
         assert recon["reconstructed_root_translation"].shape == (4, 3)
         assert recon["parents"].shape == (4,)
+        assert int(recon["joint_count"]) == 4
+        assert recon["joint_names"].tolist() == ["joint_0", "joint_1", "joint_2", "joint_3"]
     metrics = json.loads(result.metrics_path.read_text(encoding="utf-8"))
     assert metrics["samples"][0]["mpjpe"] >= 0
     assert metrics["samples"][0]["root_mpjpe"] >= 0
     assert metrics["samples"][0]["root_relative_mpjpe"] >= 0
+    assert metrics["split"] == "explicit"
     assert metrics["view"] == "multi"
     assert metrics["views"] == ["front", "side", "top"]
+    assert metrics["samples"][0]["joint_count"] == 4
+    assert metrics["samples"][0]["split"] == "explicit"
+    assert metrics["samples"][0]["joint_names_head"] == ["joint_0", "joint_1", "joint_2", "joint_3"]
 
 
-def test_stage1_vae_visualization_defaults_to_multi_view():
+def test_stage1_vae_visualization_defaults_to_multi_view_validation_split():
     config = parse_args([])
 
     assert config.view == "multi"
+    assert config.split == "val"
     assert config.selection == "motion"
     assert config.trail_frames == 12
+
+
+def test_stage1_vae_visualization_uses_checkpoint_validation_split(tmp_path):
+    data_root, manifest_path = write_normalized_dataset(tmp_path / "data", frames=12, joints=4)
+    checkpoint_path = write_checkpoint(tmp_path, data_root, manifest_path)
+    output_dir = tmp_path / "vis"
+
+    result = run_stage1_vae_visualization(
+        Stage1VisualizationConfig(
+            data_root=data_root,
+            manifest_path=manifest_path,
+            checkpoint_path=checkpoint_path,
+            output_dir=output_dir,
+            window_size=4,
+            stride=2,
+            num_samples=1,
+            selection="first",
+            view="front",
+            device="cpu",
+        )
+    )
+
+    metrics = json.loads(result.metrics_path.read_text(encoding="utf-8"))
+    _, expected_val_indices = split_dataset_indices(
+        dataset_len=5,
+        val_fraction=Stage1VAEConfig().val_fraction,
+        seed=Stage1VAEConfig().seed,
+    )
+    assert metrics["split"] == "val"
+    assert metrics["split_window_count"] == len(expected_val_indices)
+    assert metrics["samples"][0]["window_index"] == expected_val_indices[0]
+    assert metrics["samples"][0]["split"] == "val"
+
+
+def test_stage1_vae_visualization_records_larger_joint_topology(tmp_path):
+    data_root, manifest_path = write_normalized_dataset(tmp_path / "data", frames=6, joints=6)
+    checkpoint_path = write_checkpoint(tmp_path, data_root, manifest_path)
+    output_dir = tmp_path / "vis"
+
+    result = run_stage1_vae_visualization(
+        Stage1VisualizationConfig(
+            data_root=data_root,
+            manifest_path=manifest_path,
+            checkpoint_path=checkpoint_path,
+            output_dir=output_dir,
+            window_size=4,
+            stride=2,
+            sample_indices=[0],
+            view="front",
+            device="cpu",
+        )
+    )
+
+    metrics = json.loads(result.metrics_path.read_text(encoding="utf-8"))
+    assert metrics["samples"][0]["joint_count"] == 6
+    assert metrics["samples"][0]["joint_names_head"] == [
+        "joint_0",
+        "joint_1",
+        "joint_2",
+        "joint_3",
+        "joint_4",
+        "joint_5",
+    ]
+    with np.load(result.reconstruction_paths[0]) as recon:
+        assert int(recon["joint_count"]) == 6
+        assert recon["joint_names"].tolist() == [
+            "joint_0",
+            "joint_1",
+            "joint_2",
+            "joint_3",
+            "joint_4",
+            "joint_5",
+        ]
 
 
 def test_stage1_vae_visualization_defaults_to_motionful_windows(tmp_path):
