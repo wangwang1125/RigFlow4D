@@ -12,6 +12,7 @@ from preprocess.visual.token_cache import (
     parse_args,
     validate_visual_tokens,
     write_visual_token_cache,
+    write_visual_token_cache_from_source,
 )
 
 
@@ -96,6 +97,28 @@ def test_write_visual_token_cache_writes_expected_keys(tmp_path):
         np.testing.assert_array_equal(cache["visual_patch_grid"], np.array([2, 2]))
         assert cache["visual_has_cls"].item() == 0
         assert cache["visual_num_registers"].item() == 4
+
+
+def test_write_visual_token_cache_from_source_reads_frame_source(tmp_path):
+    frames_path = tmp_path / "frames.npz"
+    out_path = tmp_path / "visual_cache.npz"
+    np.savez(frames_path, frames=np.ones((1, 3, 4, 4, 3), dtype=np.uint8))
+    backbone = DeterministicVisualBackbone(
+        config=VisualTokenCacheConfig(
+            backbone_name="dinov3_dummy",
+            feature_dim=6,
+            patch_grid=(2, 2),
+        )
+    )
+
+    write_visual_token_cache_from_source(
+        frames_source=frames_path,
+        backbone=backbone,
+        out_path=out_path,
+    )
+
+    with np.load(out_path, allow_pickle=False) as cache:
+        assert cache["visual_tokens"].shape == (1, 3, 4, 6)
 
 
 def test_validate_visual_tokens_rejects_wrong_shape():
@@ -218,3 +241,30 @@ def test_parse_args_builds_huggingface_write_command(tmp_path):
     assert args.patch_grid == (2, 2)
     assert args.cache_dir == tmp_path / "hf_cache"
     assert args.local_files_only is True
+
+
+def test_parse_args_builds_hf_writer_with_frame_source(tmp_path):
+    args = parse_args(
+        [
+            "write-hf",
+            "--frames",
+            str(tmp_path / "frames"),
+            "--frames-key",
+            "images",
+            "--out",
+            str(tmp_path / "cache.npz"),
+            "--hf-model-id",
+            "example/dinov3-test",
+            "--feature-dim",
+            "8",
+            "--patch-grid",
+            "2",
+            "2",
+        ]
+    )
+
+    assert args.command == "write-hf"
+    assert args.frames == tmp_path / "frames"
+    assert args.frames_key == "images"
+    assert args.out == tmp_path / "cache.npz"
+    assert args.hf_model_id == "example/dinov3-test"

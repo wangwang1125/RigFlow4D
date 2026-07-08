@@ -192,6 +192,20 @@ def test_train_latent_refiner_step_uses_visual_tokens(tmp_path):
     assert math.isfinite(loss)
 
 
+def test_stage2_config_infers_visual_dim_from_dataset(tmp_path):
+    base_config = make_config(tmp_path, max_steps=1, include_visual=True, visual_dim=7)
+    config = LatentRefinerSmokeConfig(
+        **{
+            **base_config.to_dict(),
+            "visual_dim": None,
+        }
+    )
+
+    model = build_latent_refiner(config)
+
+    assert model.condition_encoder.visual_dim == 7
+
+
 def test_run_latent_refiner_smoke_training_returns_finite_losses(tmp_path):
     config = make_config(tmp_path, max_steps=2)
 

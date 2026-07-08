@@ -42,7 +42,7 @@ class LatentRefinerSmokeConfig:
     condition_dim: int = 64
     model_hidden_dim: int = 128
     condition_hidden_dim: int = 64
-    visual_dim: int = 1
+    visual_dim: int | None = None
     camera_dim: int = 1
     rig_dim: int = 1
     pose_seed_dim: int = 9
@@ -71,7 +71,8 @@ class LatentRefinerSmokeConfig:
         _require_positive("condition_dim", self.condition_dim)
         _require_positive("model_hidden_dim", self.model_hidden_dim)
         _require_positive("condition_hidden_dim", self.condition_hidden_dim)
-        _require_positive("visual_dim", self.visual_dim)
+        if self.visual_dim is not None:
+            _require_positive("visual_dim", self.visual_dim)
         _require_positive("camera_dim", self.camera_dim)
         _require_positive("rig_dim", self.rig_dim)
         _require_positive("pose_seed_dim", self.pose_seed_dim)
@@ -194,9 +195,10 @@ def build_latent_refiner(
     device: torch.device | None = None,
 ) -> RigFlowLatentRefiner:
     device = torch.device("cpu") if device is None else device
+    visual_dim = resolve_visual_dim(config)
     vae = _build_or_load_vae(config=config, device=device)
     condition_encoder = RigFlowConditionEncoder(
-        visual_dim=config.visual_dim,
+        visual_dim=visual_dim,
         camera_dim=config.camera_dim,
         rig_dim=config.rig_dim,
         pose_seed_dim=config.pose_seed_dim,
@@ -332,6 +334,7 @@ def evaluate_latent_refiner(
 def run_latent_refiner_smoke_training(
     config: LatentRefinerSmokeConfig,
 ) -> LatentRefinerSmokeResult:
+    config = resolve_stage2_config(config)
     torch.manual_seed(config.seed)
     device = torch.device(config.device)
     dataloader = build_motion_dataloader(config)
@@ -360,6 +363,7 @@ def run_latent_refiner_smoke_training(
 def run_stage2_latent_flow_training(
     config: LatentRefinerSmokeConfig,
 ) -> LatentRefinerTrainingResult:
+    config = resolve_stage2_config(config)
     if config.stage1_checkpoint_path is None or not config.stage1_checkpoint_path.exists():
         raise FileNotFoundError(
             "Stage 2 training requires a Stage 1 VAE checkpoint. "
@@ -436,6 +440,29 @@ def run_stage2_latent_flow_training(
     )
 
 
+def resolve_stage2_config(config: LatentRefinerSmokeConfig) -> LatentRefinerSmokeConfig:
+    visual_dim = resolve_visual_dim(config)
+    if config.visual_dim == visual_dim:
+        return config
+    return LatentRefinerSmokeConfig(
+        **{
+            **config.to_dict(),
+            "visual_dim": visual_dim,
+        }
+    )
+
+
+def resolve_visual_dim(config: LatentRefinerSmokeConfig) -> int:
+    if config.visual_dim is not None:
+        return int(config.visual_dim)
+    adapter = NormalizedNpzAdapter(root=config.data_root, manifest_path=config.manifest_path)
+    for index in range(len(adapter)):
+        sample = adapter[index]
+        if sample.visual is not None:
+            return int(sample.visual.feature_dim)
+    return 1
+
+
 def save_latent_refiner_checkpoint(
     path: Path,
     model: RigFlowLatentRefiner,
@@ -480,7 +507,7 @@ def parse_args(argv: Optional[Iterable[str]] = None) -> LatentRefinerSmokeConfig
     parser.add_argument("--condition-dim", type=int, default=64)
     parser.add_argument("--model-hidden-dim", type=int, default=128)
     parser.add_argument("--condition-hidden-dim", type=int, default=64)
-    parser.add_argument("--visual-dim", type=int, default=1)
+    parser.add_argument("--visual-dim", type=int, default=None)
     parser.add_argument("--val-fraction", type=float, default=0.05)
     parser.add_argument("--log-every", type=int, default=50)
     parser.add_argument("--eval-every", type=int, default=1000)

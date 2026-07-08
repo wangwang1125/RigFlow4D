@@ -7,6 +7,8 @@ from typing import Iterable, Optional, Protocol, Tuple
 
 import numpy as np
 
+from .frame_io import load_frame_source
+
 
 @dataclass(frozen=True)
 class VisualTokenCacheConfig:
@@ -145,6 +147,16 @@ def write_visual_token_cache(
     return out
 
 
+def write_visual_token_cache_from_source(
+    frames_source: str | Path,
+    backbone: VisualBackbone,
+    out_path: str | Path,
+    frames_key: str = "frames",
+) -> Path:
+    frames = load_frame_source(frames_source, frames_key=frames_key)
+    return write_visual_token_cache(frames=frames, backbone=backbone, out_path=out_path)
+
+
 def inject_visual_cache_into_normalized_npz(
     normalized_npz_path: str | Path,
     visual_cache_path: str | Path,
@@ -217,7 +229,9 @@ def parse_args(argv: Optional[Iterable[str]] = None) -> argparse.Namespace:
     inject_parser.add_argument("--out", required=True, type=Path)
 
     hf_parser = subparsers.add_parser("write-hf", help="write visual cache with a HuggingFace backbone")
-    hf_parser.add_argument("--frames-npz", required=True, type=Path)
+    frames_group = hf_parser.add_mutually_exclusive_group(required=True)
+    frames_group.add_argument("--frames", type=Path)
+    frames_group.add_argument("--frames-npz", type=Path)
     hf_parser.add_argument("--frames-key", default="frames")
     hf_parser.add_argument("--out", required=True, type=Path)
     hf_parser.add_argument("--hf-model-id", required=True)
@@ -242,8 +256,7 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
         print(out)
         return 0
     if args.command == "write-hf":
-        with np.load(args.frames_npz, allow_pickle=False) as src:
-            frames = np.asarray(src[args.frames_key])
+        frames_source = args.frames if args.frames is not None else args.frames_npz
         backbone = HuggingFaceVisualBackbone(
             model_id=args.hf_model_id,
             config=VisualTokenCacheConfig(
@@ -254,7 +267,12 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
             cache_dir=args.cache_dir,
             local_files_only=args.local_files_only,
         )
-        out = write_visual_token_cache(frames=frames, backbone=backbone, out_path=args.out)
+        out = write_visual_token_cache_from_source(
+            frames_source=frames_source,
+            backbone=backbone,
+            out_path=args.out,
+            frames_key=args.frames_key,
+        )
         print(out)
         return 0
     raise ValueError(f"unknown command: {args.command}")
