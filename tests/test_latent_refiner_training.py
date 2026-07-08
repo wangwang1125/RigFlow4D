@@ -12,12 +12,15 @@ from train.rigflow4d_latent_refiner import (
     build_motion_dataloader,
     motion_batch_to_torch,
     parse_args,
+    run_stage2_latent_flow_training,
     run_latent_refiner_smoke_training,
     train_latent_refiner_step,
 )
+from train.rigflow4d_stage1_vae import Stage1VAEConfig, build_stage1_vae, save_stage1_vae_checkpoint
 
 
 def write_normalized_dataset(tmp_path, frames=6, joints=4, include_visual=False, visual_dim=6):
+    tmp_path.mkdir(parents=True, exist_ok=True)
     sample_path = tmp_path / "sample_0000.npz"
     manifest_path = tmp_path / "manifest.json"
     payload = {
@@ -74,6 +77,38 @@ def make_config(tmp_path, max_steps=2, include_visual=False, visual_dim=6):
     )
 
 
+def write_stage1_checkpoint(tmp_path, data_root, manifest_path, latent_dim=8):
+    config = Stage1VAEConfig(
+        data_root=data_root,
+        manifest_path=manifest_path,
+        output_dir=tmp_path / "stage1",
+        window_size=3,
+        stride=2,
+        batch_size=2,
+        max_steps=1,
+        latent_dim=latent_dim,
+        hidden_dim=32,
+        num_layers=1,
+        num_heads=4,
+        ffn_dim=64,
+        dropout=0.0,
+        device="cpu",
+    )
+    model = build_stage1_vae(config)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
+    checkpoint_path = config.output_dir / "vae_best.pt"
+    save_stage1_vae_checkpoint(
+        path=checkpoint_path,
+        model=model,
+        optimizer=optimizer,
+        step=1,
+        config=config,
+        metrics={"val_loss": 1.0},
+        best_val_loss=1.0,
+    )
+    return checkpoint_path
+
+
 def test_build_motion_dataloader_reads_normalized_npz(tmp_path):
     config = make_config(tmp_path, max_steps=1)
 
@@ -97,8 +132,31 @@ def test_motion_batch_to_torch_converts_expected_dtypes(tmp_path):
 
     assert torch_batch["positions"].dtype == torch.float32
     assert torch_batch["local_rotations_6d"].dtype == torch.float32
+    assert torch_batch["parents"].dtype == torch.long
+    assert torch_batch["rest_offsets"].dtype == torch.float32
+    assert torch_batch["chain_ids"].dtype == torch.long
+    assert torch_batch["chain_coordinates"].dtype == torch.float32
+    assert torch_batch["pose_seed"].shape == (2, 3, 4, 9)
     assert torch_batch["time_mask"].dtype == torch.bool
     assert torch_batch["joint_mask"].dtype == torch.bool
+
+
+def test_build_latent_refiner_loads_and_freezes_stage1_checkpoint(tmp_path):
+    config = make_config(tmp_path / "data", max_steps=1)
+    checkpoint_path = write_stage1_checkpoint(tmp_path, config.data_root, config.manifest_path)
+    config = LatentRefinerSmokeConfig(
+        **{
+            **config.to_dict(),
+            "stage1_checkpoint_path": checkpoint_path,
+            "freeze_vae": True,
+        }
+    )
+
+    model = build_latent_refiner(config, device=torch.device("cpu"))
+
+    assert model.vae.latent_dim == 8
+    assert all(not parameter.requires_grad for parameter in model.vae.parameters())
+    assert any(parameter.requires_grad for parameter in model.flow_matcher.parameters())
 
 
 def test_train_latent_refiner_step_updates_flow_parameters(tmp_path):
@@ -108,12 +166,15 @@ def test_train_latent_refiner_step_updates_flow_parameters(tmp_path):
     batch = next(iter(build_motion_dataloader(config)))
     torch_batch = motion_batch_to_torch(batch, device=torch.device("cpu"))
     before = model.flow_matcher.net[0].weight.detach().clone()
+    vae_before = next(model.vae.parameters()).detach().clone()
 
     loss = train_latent_refiner_step(model, torch_batch, optimizer)
 
     after = model.flow_matcher.net[0].weight.detach()
+    vae_after = next(model.vae.parameters()).detach()
     assert math.isfinite(loss)
     assert not torch.allclose(before, after)
+    assert torch.allclose(vae_before, vae_after)
 
 
 def test_train_latent_refiner_step_uses_visual_tokens(tmp_path):
@@ -141,6 +202,41 @@ def test_run_latent_refiner_smoke_training_returns_finite_losses(tmp_path):
     assert all(math.isfinite(loss) for loss in result.loss_history)
 
 
+def test_run_stage2_latent_flow_training_saves_checkpoints_and_metrics(tmp_path):
+    base_config = make_config(tmp_path / "data", max_steps=1)
+    checkpoint_path = write_stage1_checkpoint(tmp_path, base_config.data_root, base_config.manifest_path)
+    config = LatentRefinerSmokeConfig(
+        **{
+            **base_config.to_dict(),
+            "stage1_checkpoint_path": checkpoint_path,
+            "output_dir": tmp_path / "stage2",
+            "max_steps": 2,
+            "eval_every": 1,
+            "save_every": 1,
+            "device": "cpu",
+        }
+    )
+
+    result = run_stage2_latent_flow_training(config)
+
+    latest_path = config.output_dir / "flow_latest.pt"
+    best_path = config.output_dir / "flow_best.pt"
+    metrics_path = config.output_dir / "metrics.jsonl"
+    latest = torch.load(latest_path, map_location="cpu")
+
+    assert result.steps == 2
+    assert latest_path.exists()
+    assert best_path.exists()
+    assert metrics_path.exists()
+    assert latest["step"] == 2
+    assert "model_state" in latest
+    assert "optimizer_state" in latest
+    assert "stage1_checkpoint_path" in latest["config"]
+    assert math.isfinite(result.best_val_loss)
+    assert "val_loss" in result.last_metrics
+    assert metrics_path.read_text(encoding="utf-8").strip()
+
+
 def test_parse_args_builds_smoke_config(tmp_path):
     _, manifest_path = write_normalized_dataset(tmp_path)
 
@@ -164,6 +260,10 @@ def test_parse_args_builds_smoke_config(tmp_path):
             "12",
             "--visual-dim",
             "6",
+            "--output-dir",
+            str(tmp_path / "stage2"),
+            "--stage1-checkpoint",
+            str(tmp_path / "stage1" / "vae_best.pt"),
         ]
     )
 
@@ -176,6 +276,8 @@ def test_parse_args_builds_smoke_config(tmp_path):
     assert config.latent_dim == 8
     assert config.condition_dim == 12
     assert config.visual_dim == 6
+    assert config.output_dir == tmp_path / "stage2"
+    assert config.stage1_checkpoint_path == tmp_path / "stage1" / "vae_best.pt"
 
 
 def test_latent_refiner_script_help_runs_from_file_path():
@@ -187,4 +289,4 @@ def test_latent_refiner_script_help_runs_from_file_path():
     )
 
     assert result.returncode == 0
-    assert "RigFlow4D latent refiner smoke training" in result.stdout
+    assert "RigFlow4D Stage 2 latent flow training" in result.stdout

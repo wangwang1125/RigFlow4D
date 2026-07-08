@@ -129,6 +129,26 @@ By default this reads `checkpoints/rigflow4d_stage1_tgvae/vae_best.pt` and write
 
 Each GIF frame contains front, side, and top views in one image, with a short motion trail so movement is easier to inspect. The visualizer also defaults to `--selection motion`, which scores candidate windows by joint velocity instead of always picking the first static-looking clips. The `.npz` and `metrics.json` outputs include root translation, root-relative reconstruction errors, `joint_count`, and `joint_names_head`. If the preview still shows 24 points, check `outputs/visualize_stage1_vae/metrics.json`: `joint_count=24` means the normalized dataset or checkpoint was produced from 24-joint data; delete `datasets/AMASS_RigFlow4D`, reconvert AMASS with the current converter, and retrain. Use `--selection first`, `--sample-index`, `--trail-frames 0`, or larger `--width/--height` when you want a specific debug view.
 
+## Stage 2 Latent Flow
+
+After Stage 1 has produced `checkpoints/rigflow4d_stage1_tgvae/vae_best.pt`, train the first formal latent flow refiner:
+
+```bash
+python train/rigflow4d_latent_refiner.py --device cuda
+```
+
+This loads the Stage 1 VAE checkpoint, freezes the VAE by default, encodes each motion window into the rig-native latent target `z1`, and trains a conditional flow matcher from noise `z0` to that latent. The current condition path uses a pose seed derived from root-relative positions and 6D rotations, plus optional cached visual tokens when the normalized dataset contains them. The script writes `flow_latest.pt`, `flow_best.pt`, and `metrics.jsonl` under `checkpoints/rigflow4d_stage2_latent_flow/`.
+
+For custom paths:
+
+```bash
+python train/rigflow4d_latent_refiner.py \
+  --data-root /path/to/AMASS_RigFlow4D \
+  --manifest manifest.json \
+  --stage1-checkpoint /path/to/vae_best.pt \
+  --device cuda
+```
+
 ## Planning Document
 
 The current research and implementation plan is copied to:
